@@ -1,0 +1,79 @@
+name: Build and Publish Plugin
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  build-release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build (timestamped version)
+        shell: pwsh
+        run: |
+          $ver = (Get-Date).ToUniversalTime().ToString('yyyy.MM.dd.HHmm')
+          "VER=$ver" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          dotnet build FFTrueBard/FFTrueBard.csproj -c Release "-p:Version=$ver"
+
+      - name: Collect packaged zip
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem -Path . -Recurse -Filter 'FFTrueBard.zip' |
+                 Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $zip) { throw 'FFTrueBard.zip was not produced by the build.' }
+          Copy-Item $zip.FullName .\FFTrueBard.zip -Force
+          Write-Host "Packaged: $($zip.FullName)"
+
+      - name: Generate pluginmaster.json
+        shell: pwsh
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          $zipUrl = "https://github.com/$env:REPO/releases/latest/download/FFTrueBard.zip"
+          $m = [ordered]@{
+            Author                  = 'claderino'
+            Name                    = 'FFTrueBard'
+            Punchline               = 'Play Final Fantasy XIV with an electric guitar.'
+            Description             = 'Guitar-to-input bridge. A local note detector streams note events over localhost; the plugin maps them to in-game keyboard/mouse input.'
+            InternalName            = 'FFTrueBard'
+            AssemblyVersion         = $env:VER
+            TestingAssemblyVersion  = $env:VER
+            RepoUrl                 = "https://github.com/$env:REPO"
+            ApplicableVersion       = 'any'
+            DalamudApiLevel         = 15
+            LoadPriority            = 0
+            Tags                    = @('input', 'guitar', 'music', 'fun')
+            Changelog               = "Automated build $env:VER"
+            DownloadUrlInstall      = $zipUrl
+            DownloadUrlUpdate       = $zipUrl
+            DownloadUrlTesting      = $zipUrl
+            DownloadLinkUpdate      = $zipUrl
+            DownloadLinkTesting     = $zipUrl
+          }
+          ConvertTo-Json @($m) -Depth 6 | Set-Content -Encoding utf8 pluginmaster.json
+
+      - name: Publish to the moving 'latest' release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: latest
+          body: "Automated build ${{ env.VER }} - this release is overwritten on every push to main."
+          files: |
+            FFTrueBard.zip
+            pluginmaster.json
