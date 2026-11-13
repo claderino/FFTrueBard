@@ -3,7 +3,7 @@ using Dalamud.Configuration;
 namespace FFTrueBard;
 
 [Serializable]
-public sealed class Configuration : IPluginConfig
+public sealed class Configuration : IPluginConfiguration
 {
     public int Version { get; set; } = 1;
 

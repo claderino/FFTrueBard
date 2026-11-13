@@ -1,6 +1,6 @@
 using System.Numerics;
 using FFTrueBard.Link;
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 
 namespace FFTrueBard.UI;
 
