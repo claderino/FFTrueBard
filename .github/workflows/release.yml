@@ -36,14 +36,44 @@ jobs:
           "VER=$ver" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
           dotnet build FFTrueBard/FFTrueBard.csproj -c Release "-p:Version=$ver"
 
-      - name: Collect packaged zip
+      - name: Package release zip
         shell: pwsh
+        env:
+          REPO: ${{ github.repository }}
         run: |
+          # Prefer a DalamudPackager-produced zip if the SDK made one.
           $zip = Get-ChildItem -Path . -Recurse -Filter 'FFTrueBard.zip' |
                  Sort-Object LastWriteTime -Descending | Select-Object -First 1
-          if (-not $zip) { throw 'FFTrueBard.zip was not produced by the build.' }
-          Copy-Item $zip.FullName .\FFTrueBard.zip -Force
-          Write-Host "Packaged: $($zip.FullName)"
+
+          if (-not $zip) {
+            $dll = Get-ChildItem -Path . -Recurse -Filter 'FFTrueBard.dll' |
+                   Sort-Object LastWriteTime -Descending | Select-Object -First 1
+            if (-not $dll) { throw 'FFTrueBard.dll was not produced by the build.' }
+            $outDir = $dll.DirectoryName
+
+            $manifest = [ordered]@{
+              Author              = 'claderino'
+              Name                = 'FFTrueBard'
+              Punchline           = 'Play Final Fantasy XIV with an electric guitar.'
+              Description         = 'Guitar-to-input bridge. A local note detector streams note events over localhost; the plugin maps them to in-game keyboard/mouse input.'
+              InternalName        = 'FFTrueBard'
+              AssemblyVersion     = $env:VER
+              RepoUrl             = "https://github.com/$env:REPO"
+              ApplicableVersion   = 'any'
+              DalamudApiLevel     = 15
+              LoadPriority        = 0
+              Tags                = @('input', 'guitar', 'music', 'fun')
+            }
+            ConvertTo-Json $manifest -Depth 6 |
+              Set-Content -Encoding utf8 (Join-Path $outDir 'FFTrueBard.json')
+
+            Compress-Archive -Path "$outDir/*" -DestinationPath .\FFTrueBard.zip -Force
+            Write-Host "Packaged manually from $outDir"
+          }
+          else {
+            Copy-Item $zip.FullName .\FFTrueBard.zip -Force
+            Write-Host "Packaged by DalamudPackager: $($zip.FullName)"
+          }
 
       - name: Generate pluginmaster.json
         shell: pwsh
