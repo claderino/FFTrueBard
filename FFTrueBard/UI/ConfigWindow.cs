@@ -1,6 +1,6 @@
 using System.Numerics;
-using FFTrueBard.Link;
 using Dalamud.Bindings.ImGui;
+using FFTrueBard.Detection;
 
 namespace FFTrueBard.UI;
 
@@ -9,24 +9,36 @@ public sealed class ConfigWindow
     private const string Title = "FFTrueBard Settings";
 
     private readonly Configuration config;
-    private readonly NoteLinkServer server;
+    private readonly GuitarDetector detector;
     private readonly object lockObj = new();
     private readonly List<string> recentNotes = [];
-    private int portDraft;
+
+    private string[] devices = [];
     private bool visible;
 
-    public ConfigWindow(Configuration config, NoteLinkServer server)
+    public ConfigWindow(Configuration config, GuitarDetector detector)
     {
         this.config = config;
-        this.server = server;
-        portDraft = config.ListenPort;
+        this.detector = detector;
+        devices = [.. detector.DeviceNames];
     }
 
     public bool Visible => visible;
 
-    public void Open() => visible = true;
+    public void Open()
+    {
+        visible = true;
+        detector.RefreshDevices();
+        devices = [.. detector.DeviceNames];
+    }
 
-    public void Toggle() => visible = !visible;
+    public void Toggle()
+    {
+        if (visible)
+            visible = false;
+        else
+            Open();
+    }
 
     public void PushEvent(string note, float amp)
     {
@@ -43,7 +55,7 @@ public sealed class ConfigWindow
         if (!visible)
             return;
 
-        ImGui.SetNextWindowSize(new Vector2(430, 360), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowSize(new Vector2(430, 380), ImGuiCond.FirstUseEver);
         if (!ImGui.Begin(Title, ref visible))
         {
             ImGui.End();
@@ -54,18 +66,47 @@ public sealed class ConfigWindow
         if (ImGui.Checkbox("Enabled (inject notes)", ref enabled))
             config.Enabled = enabled;
 
-        ImGui.InputInt("Detector port", ref portDraft);
-        ImGui.TextDisabled("Changing the port needs a plugin reload.");
-        if (portDraft != config.ListenPort)
+        ImGui.Separator();
+
+        // Device picker
+        var selected = config.DeviceName;
+        if (string.IsNullOrWhiteSpace(selected))
+            selected = "(default capture device)";
+        if (ImGui.BeginCombo("Input device", selected))
         {
-            ImGui.SameLine();
-            if (ImGui.SmallButton("Apply"))
-                config.ListenPort = Math.Clamp(portDraft, 1024, 65535);
+            if (ImGui.Selectable("(default capture device)", string.IsNullOrWhiteSpace(config.DeviceName)))
+            {
+                config.DeviceName = "";
+                detector.Restart();
+            }
+
+            foreach (var name in devices)
+            {
+                if (ImGui.Selectable(name, name == config.DeviceName))
+                {
+                    config.DeviceName = name;
+                    detector.StartWith(name);
+                }
+            }
+
+            ImGui.EndCombo();
         }
 
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Refresh"))
+        {
+            detector.RefreshDevices();
+            devices = [.. detector.DeviceNames];
+        }
+
+        ImGui.Text($"Status: {detector.StatusText}");
+        ImGui.TextDisabled("Tip: set the NUX USB routing to Dry Out for a clean signal.");
+
         ImGui.Separator();
-        ImGui.Text($"Detector clients connected: {server.ConnectedClients}");
-        ImGui.TextDisabled("Start the detector:  python tools/detector/detector.py");
+        ImGui.Text(
+            $"Detection: threshold {config.DetectionThreshold:0.00}, gate {config.RmsGate:0.000}, " +
+            $"retrigger {config.RetriggerMs} ms, stable {config.StableFrames}");
+        ImGui.TextDisabled("Tune these in Configuration.cs for now; in-game editing is on the roadmap.");
 
         ImGui.Separator();
         ImGui.TextUnformatted("Recent notes (newest on top)");

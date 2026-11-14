@@ -2,19 +2,19 @@
 
 Play **Final Fantasy XIV** with an electric guitar.
 
-A guitar note detector streams note events to a Dalamud plugin, which maps them
-to in-game keyboard/mouse input. Your NUX Mighty Space (NGA-30W) acts as the
-audio interface (USB routing set to **Dry Out**).
+FFTrueBard captures your guitar signal inside the game process (WASAPI via
+your NUX Mighty Space or any audio interface), detects notes with a built-in
+YIN pitch detector, and maps them to in-game keyboard/mouse input.
 
 ```
-Guitar ──> NUX NGA-30W (USB "Dry Out") ──> detector.py (YIN pitch detection)
-                                               │  JSON lines, 127.0.0.1:4242
-                                               ▼
-                                  FFTrueBard (Dalamud plugin)
-                                   ├─ maps notes -> keys / mouse buttons
-                                   ├─ in-game config UI + live note log
-                                   └─ /ftruebard command
+Guitar ──> NUX NGA-30W (USB "Dry Out") ──> FFTrueBard (Dalamud plugin)
+                                             ├─ WASAPI capture + YIN detection (built in)
+                                             ├─ note -> key / mouse button mapping
+                                             ├─ in-game config UI + live note log
+                                             └─ /ftruebard command
 ```
+
+**No Python, no extra installs.** The detector is built into the plugin.
 
 ## Install (any PC, instant updates)
 
@@ -33,29 +33,19 @@ every PC with the repo URL above pulls the new build the next time Dalamud
 refreshes plugins (game restart or `/xlplugins` refresh). No manual version
 bumping, no per-PC work.
 
-> Note: local dev builds (version `1.0.0`) will always be stomped by CI builds.
-> That's intentional - CI is the source of truth. For quick local iteration,
-> drop the DLL in `%APPDATA%\XIVLauncher\devPlugins\` and expect it to be
-> replaced by CI builds on refresh.
+## Using it
 
-## Run the detector
+1. Set the NUX USB routing to **Dry Out** (clean signal - no amp sim, no FX).
+2. `/ftruebard` in game -> pick your input device (it auto-matches "NUX").
+3. Play - notes stream into the live log, mapped notes fire their actions.
 
-```powershell
-cd tools\detector
-python -m venv .venv && .venv\Scripts\activate
-pip install -r requirements.txt
-python detector.py --device NUX
-```
-
-- `--list-devices` to find your input device.
-- Set the NUX USB routing to **Dry Out** (clean signal - no amp sim, no FX).
-- Notes appear in the plugin window (`/ftruebard`) and are injected per the
-  mapping table (see `FFTrueBard/Configuration.cs`).
+Tuning knobs live in `Configuration.cs` for now (threshold, noise gate,
+retrigger period, stability frames); the mapping table is there too.
 
 ## Mapping
 
-Note name -> action, editable in `Configuration.cs` (in-game editing UI is on
-the roadmap):
+Note name -> action, in `Configuration.cs` (in-game editing UI is on the
+roadmap):
 
 | Note | Default action |
 |------|----------------|
@@ -67,10 +57,9 @@ the roadmap):
 ```
 FFTrueBard/            Dalamud plugin (C#, Dalamud.NET.Sdk)
   FFTrueBardPlugin.cs  entry point, event pump
-  Link/                localhost TCP server receiving note events
+  Detection/           WASAPI capture + YIN pitch detection (built in)
   Input/               input injection (currently dry-run stub w/ TODO)
-  UI/                  ImGui config window
-tools/detector/        Python note detector (YIN, WASAPI capture)
+  UI/                  ImGui config window (device picker, live log)
 .github/workflows/     build + publish to the 'latest' release
 ```
 
@@ -78,13 +67,13 @@ tools/detector/        Python note detector (YIN, WASAPI capture)
 
 - [ ] Real input injection (see TODO in `Input/InputInjector.cs`)
 - [ ] Note-off / key-hold semantics (hold a note to hold a key)
-- [ ] In-game mapping editor
+- [ ] In-game mapping + tuning editor
 - [ ] Chat-open gating (don't type riffs into chat)
 - [ ] Chord trainer / practice modes (chromagram-based)
 
 ## Status + warnings
 
-- Dalamud API level 15 (`Dalamud.NET.Sdk/15.0.0`).
+- Dalamud API level 15 (`Dalamud.NET.Sdk/15.0.0`), .NET 10.
 - Anything Dalamud-based is against FFXIV ToS in principle. Input-automation
   plugins are the category Square Enix likes least - keep this personal,
   don't submit it to the official plugin repository.
