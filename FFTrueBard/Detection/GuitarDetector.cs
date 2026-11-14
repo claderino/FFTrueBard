@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using Dalamud.Plugin.Services;
 using NAudio.CoreAudioApi;
@@ -114,8 +113,10 @@ public sealed class GuitarDetector : IDisposable
 
     private void OnDataAvailable(object? sender, WaveInEventArgs e)
     {
-        var floats = new float[e.BytesRecorded / sizeof(float)];
-        Marshal.Copy(e.Buffer, floats, 0, floats.Length);
+        // e.Buffer is managed IEEE float32 little-endian data.
+        var bytes = e.BytesRecorded - (e.BytesRecorded % sizeof(float));
+        var floats = new float[bytes / sizeof(float)];
+        Buffer.BlockCopy(e.Buffer, 0, floats, 0, bytes);
         rawBlocks.Writer.TryWrite(floats);
     }
 
@@ -208,7 +209,7 @@ public sealed class GuitarDetector : IDisposable
         notes.Writer.TryWrite(new NoteEvent(note, Math.Round(freq, 2), rms, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
     }
 
-    public void Dispose()
+    private void Stop()
     {
         cts?.Cancel();
         if (capture is not null)
@@ -229,5 +230,11 @@ public sealed class GuitarDetector : IDisposable
 
         device?.Dispose();
         device = null;
+    }
+
+    public void Dispose()
+    {
+        Stop();
+        cts?.Dispose();
     }
 }
