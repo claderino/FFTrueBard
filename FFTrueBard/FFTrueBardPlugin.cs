@@ -58,12 +58,10 @@ public sealed class FFTrueBardPlugin : IDalamudPlugin
     {
         while (detector.Frames.TryRead(out var frame))
         {
+            var expected = configWindow.ExpectedContext;
             configWindow.Receive(frame);
-            var expected = config.PracticeMode ? practice.Expected : "";
-            var action = config.PracticeMode ? "blocked:practice" : "disabled";
-            if (config.PracticeMode)
-                practice.Receive(frame, Math.Clamp(config.PracticeCentsTolerance, 5, 50));
-            else if (config.Enabled && frame.Decision == "accepted" &&
+            var action = config.PracticeMode || configWindow.ToolsExclusive ? "blocked:practice-tool" : "disabled";
+            if (!config.PracticeMode && !configWindow.ToolsExclusive && config.Enabled && frame.Decision == "accepted" &&
                 config.Mapping.TryGetValue(frame.Note, out var mapping) && !string.IsNullOrEmpty(mapping))
             {
                 inputInjector.Dispatch(mapping, isDown: true);
@@ -71,9 +69,10 @@ public sealed class FFTrueBardPlugin : IDalamudPlugin
             }
 
             recorder.Record(frame, detector.ActiveDevice, detector.SampleRate, detector.ActiveChannel,
-                expected, config.PracticeMode ? practice.Feedback : "", action, detector.DroppedAudioBlocks,
+                expected, configWindow.FeedbackContext, action, detector.DroppedAudioBlocks,
                 config.PracticeCentsTolerance, detector.DroppedDetectionFrames);
         }
+        configWindow.Update();
     }
 
     public void Dispose()
@@ -83,6 +82,7 @@ public sealed class FFTrueBardPlugin : IDalamudPlugin
         PluginInterface.UiBuilder.Draw -= configWindow.Draw;
         PluginInterface.UiBuilder.OpenConfigUi -= configWindow.Open;
         detector.Dispose();
+        configWindow.Dispose();
         recorder.Dispose();
         PluginInterface.SavePluginConfig(config);
     }

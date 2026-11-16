@@ -6,7 +6,7 @@ using FFTrueBard.Practice;
 
 namespace FFTrueBard.UI;
 
-public sealed class ConfigWindow
+public sealed partial class ConfigWindow : IDisposable
 {
     private readonly Configuration config;
     private readonly GuitarDetector detector;
@@ -25,6 +25,7 @@ public sealed class ConfigWindow
         this.practice = practice;
         this.recorder = recorder;
         this.save = save;
+        history = new PracticeHistory(Path.Combine(Path.GetDirectoryName(recorder.DirectoryPath)!, "practice-history.json"));
         ResetPractice();
     }
 
@@ -37,7 +38,10 @@ public sealed class ConfigWindow
     public void Toggle()
     {
         if (visible)
+        {
             visible = false;
+            StopTools();
+        }
         else
             Open();
     }
@@ -45,6 +49,26 @@ public sealed class ConfigWindow
     public void Receive(DetectionFrame frame)
     {
         latest = frame;
+        tuner.Receive(frame, tunerString);
+        calibration.Receive(frame);
+        labelledTest.Receive(frame);
+        var pastCountIn = !beats.Running || beats.BeatAt(frame.OnsetTimestampMs ?? frame.TimestampMs) >= 4;
+        if (config.PracticeMode && !ToolsExclusive && (pastCountIn || frame.Released))
+        {
+            var checkedNote = !practice.Complete && !practice.WaitingForMute && frame.Decision == "accepted";
+            var chord = practice.Chord.Name;
+            var stringNumber = 6 - practice.StringIndex;
+            var previousMisses = practice.Mistakes;
+            var previousChecks = practice.CompletedChecks;
+            practice.Receive(frame, Math.Clamp(config.PracticeCentsTolerance, 5, 50));
+            if (checkedNote)
+            {
+                history.Observe(Chords.All[config.PracticeChord].Name,
+                    config.AlternateChords && config.PracticeChord != config.TransitionChord ? Chords.All[config.TransitionChord].Name : "",
+                    chord, stringNumber, practice.Mistakes == previousMisses, practice.CompletedChecks > previousChecks);
+                beats.Observe(frame.OnsetTimestampMs ?? frame.TimestampMs, config.TimingOffsetMs);
+            }
+        }
         if (frame.Decision != "accepted")
             return;
         recentNotes.Insert(0, $"{DateTimeOffset.FromUnixTimeMilliseconds(frame.TimestampMs):HH:mm:ss.fff}  " +
@@ -58,10 +82,12 @@ public sealed class ConfigWindow
         config.PracticeChord = Math.Clamp(config.PracticeChord, 0, Chords.All.Length - 1);
         config.TransitionChord = Math.Clamp(config.TransitionChord, 0, Chords.All.Length - 1);
         practice.Configure(config.PracticeChord, config.TransitionChord, config.AlternateChords);
+        history.NewSession();
     }
 
     private void SettingsChanged()
     {
+        CancelMeasurements();
         detector.ApplySettings();
         save();
     }
@@ -82,16 +108,43 @@ public sealed class ConfigWindow
         if (ImGui.Checkbox("Practice mode (blocks mapped game inputs)", ref practiceMode))
         {
             config.PracticeMode = practiceMode;
+            StopTools();
             ResetPractice();
             save();
         }
         ImGui.TextDisabled("Game input injection is not implemented; controller mode currently logs mappings only.");
+        if (ToolsExclusive)
+        {
+            ImGui.TextUnformatted("Chord checks paused for a training tool.");
+            if (ImGui.Button("Stop tools and resume chord checks"))
+                StopTools();
+        }
 
         if (ImGui.BeginTabBar("fftruebard_tabs"))
         {
             if (ImGui.BeginTabItem("Chord practice"))
             {
                 DrawPractice();
+                ImGui.EndTabItem();
+            }
+            if (ImGui.BeginTabItem("Tuner"))
+            {
+                DrawTuner();
+                ImGui.EndTabItem();
+            }
+            if (ImGui.BeginTabItem("Calibration"))
+            {
+                DrawCalibration();
+                ImGui.EndTabItem();
+            }
+            if (ImGui.BeginTabItem("Detection test"))
+            {
+                DrawDetectionTest();
+                ImGui.EndTabItem();
+            }
+            if (ImGui.BeginTabItem("History"))
+            {
+                DrawHistory();
                 ImGui.EndTabItem();
             }
             if (ImGui.BeginTabItem("Audio & tuning"))
@@ -107,6 +160,8 @@ public sealed class ConfigWindow
             ImGui.EndTabBar();
         }
         ImGui.End();
+        if (!visible)
+            StopTools();
     }
 
     private bool ChordPicker(string label, ref int index)
@@ -186,6 +241,8 @@ public sealed class ConfigWindow
         }
 
         ImGui.TextWrapped(config.PracticeMode ? practice.Feedback : "Enable Practice mode to check notes.");
+        if (ToolsExclusive)
+            ImGui.TextWrapped("Chord checks are paused while tuning, calibrating, or running a detection test. Stop that tool to resume.");
         if (ImGui.Button("Retry current shape"))
             practice.Retry();
         ImGui.SameLine();
@@ -195,6 +252,7 @@ public sealed class ConfigWindow
             $"Last guided check: {practice.LastCheckSeconds:0.0} s");
         ImGui.TextWrapped("Timing includes picking every string and muting; it is not a measurement of a single chord change. " +
             "This checks expected pitches, not which physical string you used, hand posture, buzzing, or a full strum.");
+        DrawMetronome();
         DrawLivePitch();
     }
 
@@ -237,7 +295,7 @@ public sealed class ConfigWindow
         var retrigger = config.RetriggerMs;
         var release = config.ReleaseMs;
         var changed = ImGui.SliderFloat("YIN threshold", ref threshold, 0.02f, 0.5f, "%.2f");
-        changed |= ImGui.SliderFloat("RMS noise gate", ref gate, 0.0001f, 0.1f, "%.4f");
+        changed |= ImGui.SliderFloat("RMS noise gate", ref gate, 0.0001f, 0.2f, "%.4f");
         changed |= ImGui.SliderInt("Stable frames", ref stable, 1, 10);
         changed |= ImGui.SliderInt("Minimum interval (ms)", ref retrigger, 0, 1000);
         changed |= ImGui.SliderInt("Quiet time to rearm (ms)", ref release, 40, 1000);
@@ -268,6 +326,9 @@ public sealed class ConfigWindow
     private void RestartCapture()
     {
         recorder.Stop(); // Each recording belongs to one device/rate/channel.
+        StopTools();
+        calibration.Cancel(); // A suggestion measured on another device/channel is no longer valid.
+        tuner.Reset();
         detector.Start();
         latest = null;
         practice.Retry();

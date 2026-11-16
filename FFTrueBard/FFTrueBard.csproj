@@ -1,7 +1,7 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
 
   <PropertyGroup>
-    <Version>1.2.0</Version>
+    <Version>1.3.0</Version>
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
     <Nullable>enable</Nullable>
@@ -12,7 +12,7 @@
     <Author>claderino</Author>
     <Name>FFTrueBard</Name>
     <Punchline>Play Final Fantasy XIV with an electric guitar.</Punchline>
-    <Description>Built-in guitar detector, guided open-chord practice, live tuning, and opt-in local frequency diagnostics. Game input injection is not implemented.</Description>
+    <Description>Built-in guitar detector, chord practice, tuner, guided calibration, labelled detection tests, metronome, saved practice history, and opt-in frequency logs. Game input injection is not implemented.</Description>
     <RepoUrl>https://github.com/claderino/FFTrueBard</RepoUrl>
     <Tags>input;guitar;music;fun</Tags>
   </PropertyGroup>

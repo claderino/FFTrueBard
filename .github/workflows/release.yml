@@ -29,7 +29,7 @@ jobs:
           Invoke-WebRequest -Uri https://goatcorp.github.io/dalamud-distrib/latest.zip -OutFile latest.zip
           Expand-Archive -Force latest.zip "$env:AppData\XIVLauncher\addon\Hooks\dev"
 
-      - name: Test pitch, practice, and diagnostics
+      - name: Test pitch, training tools, and diagnostics
         run: dotnet run --project tests/FFTrueBard.Tests.csproj -c Release
 
       - name: Build (timestamped version)
@@ -51,7 +51,7 @@ jobs:
               Author              = 'claderino'
               Name                = 'FFTrueBard'
               Punchline           = 'Play Final Fantasy XIV with an electric guitar.'
-              Description         = 'Built-in guitar detector, guided open-chord practice, live tuning, and opt-in local frequency diagnostics. Game input injection is not implemented.'
+              Description         = 'Built-in guitar detector, chord practice, tuner, guided calibration, labelled detection tests, metronome, saved practice history, and opt-in frequency logs. Game input injection is not implemented.'
               InternalName        = 'FFTrueBard'
               AssemblyVersion     = $env:VER
               RepoUrl             = "https://github.com/$env:REPO"
@@ -77,7 +77,7 @@ jobs:
             Author                  = 'claderino'
             Name                    = 'FFTrueBard'
             Punchline               = 'Play Final Fantasy XIV with an electric guitar.'
-            Description             = 'Built-in guitar detector, guided open-chord practice, live tuning, and opt-in local frequency diagnostics. Game input injection is not implemented.'
+            Description             = 'Built-in guitar detector, chord practice, tuner, guided calibration, labelled detection tests, metronome, saved practice history, and opt-in frequency logs. Game input injection is not implemented.'
             InternalName            = 'FFTrueBard'
             AssemblyVersion         = $env:VER
             TestingAssemblyVersion  = $env:VER

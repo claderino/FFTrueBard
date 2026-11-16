@@ -9,6 +9,11 @@
     <Compile Include="../FFTrueBard/Detection/YinPitch.cs" Link="YinPitch.cs" />
     <Compile Include="../FFTrueBard/Detection/PitchProcessor.cs" Link="PitchProcessor.cs" />
     <Compile Include="../FFTrueBard/Practice/ChordPractice.cs" Link="ChordPractice.cs" />
+    <Compile Include="../FFTrueBard/Practice/GuitarTuner.cs" Link="GuitarTuner.cs" />
+    <Compile Include="../FFTrueBard/Practice/CalibrationWizard.cs" Link="CalibrationWizard.cs" />
+    <Compile Include="../FFTrueBard/Practice/LabelledTest.cs" Link="LabelledTest.cs" />
+    <Compile Include="../FFTrueBard/Practice/BeatClock.cs" Link="BeatClock.cs" />
+    <Compile Include="../FFTrueBard/Practice/PracticeHistory.cs" Link="PracticeHistory.cs" />
     <Compile Include="../FFTrueBard/Diagnostics/DebugRecorder.cs" Link="DebugRecorder.cs" />
   </ItemGroup>
 </Project>

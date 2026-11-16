@@ -5,13 +5,16 @@ namespace FFTrueBard;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 3;
+    public int Version { get; set; } = 4;
 
     public bool PracticeMode { get; set; } = true;
     public int PracticeChord { get; set; }
     public int TransitionChord { get; set; } = 1;
     public bool AlternateChords { get; set; }
     public float PracticeCentsTolerance { get; set; } = 35;
+    public int MetronomeBpm { get; set; } = 60;
+    public bool AudibleMetronome { get; set; }
+    public int TimingOffsetMs { get; set; }
 
     /// <summary>Master switch. When off, notes are still displayed but not injected.</summary>
     public bool Enabled { get; set; } = true;

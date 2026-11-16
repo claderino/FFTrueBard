@@ -5,7 +5,7 @@ public sealed record DetectionSettings(float Threshold, float RmsGate, int Stabl
 
 public sealed record DetectionFrame(long TimestampMs, double Frequency, string Note, int Midi,
     double Cents, float Rms, float Peak, float Confidence, string Decision, bool Released,
-    DetectionSettings Settings);
+    DetectionSettings Settings, long? OnsetTimestampMs = null);
 
 /// <summary>Audio-only state, owned by one capture worker. No game or UI calls.</summary>
 public sealed class PitchProcessor(int sampleRate)
@@ -16,6 +16,7 @@ public sealed class PitchProcessor(int sampleRate)
     private int lastAccepted = -1;
     private double quietMs;
     private long lastAcceptedAt = long.MinValue / 2;
+    private long candidateStartedAt;
 
     public DetectionFrame Process(float[] samples, long timestampMs, DetectionSettings settings)
     {
@@ -59,6 +60,8 @@ public sealed class PitchProcessor(int sampleRate)
                 midi = (int)Math.Round(exactMidi);
                 cents = (exactMidi - midi) * 100;
                 note = $"{Names[midi % 12]}{midi / 12 - 1}";
+                if (midi != candidate)
+                    candidateStartedAt = timestampMs;
                 agreeingFrames = midi == candidate ? agreeingFrames + 1 : 1;
                 candidate = midi;
                 if (agreeingFrames < settings.StableFrames)
@@ -77,6 +80,7 @@ public sealed class PitchProcessor(int sampleRate)
         }
 
         return new DetectionFrame(timestampMs, freq, note, midi, cents, rms, peak,
-            confidence, decision, quietMs >= settings.ReleaseMs, settings);
+            confidence, decision, quietMs >= settings.ReleaseMs, settings,
+            midi >= 0 ? candidateStartedAt : null);
     }
 }

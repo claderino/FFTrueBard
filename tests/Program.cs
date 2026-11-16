@@ -180,3 +180,160 @@ finally
 }
 
 Console.WriteLine($"PASS: {checks} regression checks (pitch, gating, practice, diagnostics).");
+
+Check(accepted.OnsetTimestampMs == 1000, "Accepted note retains first agreeing-frame time");
+var guitarTuner = new GuitarTuner();
+for (var i = 0; i < 5; i++)
+    guitarTuner.Receive(Heard(40, 1000 + i * 43, -12), 0);
+Check(guitarTuner.Reading?.Target == "E2" && Math.Abs(guitarTuner.Reading.Cents + 12) < 0.1, "Tuner measures flat E2");
+guitarTuner.Receive(Heard(52, 1500), 0);
+Check(guitarTuner.Reading?.Cents < 0, "Median tuner rejects a one-frame octave outlier");
+guitarTuner.Reset();
+guitarTuner.Receive(Heard(52, 1550), 0);
+Check(Math.Abs(guitarTuner.Reading!.Cents - 1200) < 0.1, "Manual tuner reports octave distance, not a false in-tune result");
+guitarTuner.Receive(Heard(45, 1600, 6), -1);
+Check(guitarTuner.Reading?.Target == "A2", "Auto tuner chooses nearest open string");
+guitarTuner.Receive(Heard(48, 1700), -1);
+Check(guitarTuner.Reading is null, "Auto tuner rejects fretted C3 outside open-string range");
+guitarTuner.Receive(Mute(1800), 0);
+Check(guitarTuner.Reading is null, "Silent input clears tuner");
+guitarTuner.Receive(Heard(40, 1900) with { Confidence = 0.2f }, 0);
+Check(guitarTuner.Reading is null, "Low confidence cannot show in tune");
+
+var calibration = new CalibrationWizard();
+calibration.Start(0);
+for (var i = 0; i < 100; i++)
+    calibration.Receive(Mute(i * 43) with { Rms = 0.001f, Peak = 0.002f });
+calibration.Tick(5000);
+Check(calibration.Phase == "ready-soft", "Calibration pauses after noise measurement");
+calibration.Begin("soft", 6000);
+for (var i = 0; i < 100; i++)
+    calibration.Receive(Heard(40, 6000 + i * 43) with { Rms = i % 10 < 2 ? 0.001f : 0.03f, Peak = 0.06f });
+calibration.Tick(11000);
+Check(calibration.Phase == "ready-normal", "Calibration pauses before normal picks");
+calibration.Begin("normal", 12000);
+for (var i = 0; i < 100; i++)
+    calibration.Receive(Heard(40, 12000 + i * 43) with { Rms = 0.1f, Peak = i == 0 ? 1 : 0.2f });
+calibration.Tick(17000);
+var suggestion = calibration.Suggestion;
+Check(suggestion is not null && suggestion.Gate > 0.001 && suggestion.Gate < 0.03, "Suggested gate separates idle noise and soft picks");
+Check(suggestion!.StableFrames == 2, "Consistent notes suggest two stable frames");
+Check(suggestion.Warning.Contains("Clipping"), "Calibration warns about clipped picks");
+Check(settings.RmsGate == 0.004f, "Calibration does not change detection settings by itself");
+calibration.Start(20000);
+calibration.Tick(25000);
+Check(calibration.Phase == "failed" && calibration.Suggestion is null, "No audio cannot produce calibration suggestions");
+calibration.Start(30000);
+calibration.Cancel();
+Check(!calibration.Running, "Calibration cancels cleanly");
+calibration.Start(0);
+for (var i = 0; i < 100; i++)
+    calibration.Receive(Mute(i * 43) with { Rms = 0.02f, Peak = 0.04f });
+calibration.Tick(5000);
+calibration.Begin("soft", 6000);
+for (var i = 0; i < 100; i++)
+    calibration.Receive(Heard(40, 6000 + i * 43) with { Rms = 0.025f, Peak = 0.05f });
+calibration.Tick(11000);
+calibration.Begin("normal", 12000);
+for (var i = 0; i < 100; i++)
+    calibration.Receive(Heard(40, 12000 + i * 43) with { Rms = 0.07f, Peak = 0.14f });
+calibration.Tick(17000);
+Check(calibration.Suggestion is null, "Overlapping noise and soft notes produce no unsafe gate suggestion");
+
+var labelled = new LabelledTest();
+labelled.Start(0, 2, 0);
+labelled.Receive(Mute(0));
+Check(labelled.Phase == "count-in" && labelled.Expected == "E2", "Labelled trial arms after silence");
+labelled.Tick(1000);
+labelled.Receive(Heard(40, 1100));
+labelled.Receive(Heard(52, 1200));
+labelled.Receive(Heard(41, 1300));
+labelled.Receive(Heard(40, 3100));
+labelled.Tick(3100);
+var trial = labelled.Trials.Single();
+Check(trial.Correct == 1 && trial.OctaveErrors == 1 && trial.WrongNotes == 1, "Labelled test distinguishes correct, octave, and pitch errors");
+Check(trial.ExtraDetections == 2 && trial.Accepted.Length == 3, "Late frames excluded and extras counted");
+labelled.Receive(Mute(3200));
+labelled.Tick(6200);
+Check(labelled.Phase == "complete" && labelled.Trials[1].Accepted.Length == 0, "Empty window records a no-detection trial");
+Check(labelled.Trials[1].Frames == 0, "Missing audio is distinguishable from gated audio");
+labelled.Start(0, 1, 10000);
+labelled.Receive(Mute(10000));
+labelled.Receive(Heard(40, 10500));
+Check(labelled.Phase == "mute", "Early pick resets the test cue");
+labelled.Receive(Mute(10600));
+labelled.Tick(11600);
+Check(labelled.Phase == "listen", "New cue follows a fresh mute");
+labelled.Cancel();
+Check(!labelled.Running, "Labelled test can be cancelled");
+labelled.Start(-1, 5, 0);
+Check(labelled.TotalTrials == 30, "All-string test schedules five picks per string");
+labelled.Tick(15000);
+Check(labelled.Phase == "failed" && !labelled.Running, "No quiet audio times out rather than waiting forever");
+labelled.Start(5, 1, 20000);
+labelled.Receive(Mute(20000));
+labelled.Tick(21000);
+labelled.Receive(Heard(64, 21100));
+labelled.Tick(23000);
+Check(labelled.Trials.Single().Expected == "E4" && labelled.Trials.Single().Correct == 1, "High-E test uses correct octave label");
+var trialJson = JsonSerializer.Serialize(labelled.Trials.Single());
+using (var trialDoc = JsonDocument.Parse(trialJson))
+    Check(trialDoc.RootElement.GetProperty("Accepted")[0].GetProperty("Frequency").GetDouble() > 329,
+        "Labelled report retains frequency measurements");
+
+var beatClock = new BeatClock();
+beatClock.Start(1000, 60);
+Check(beatClock.Observe(4999, 0) is null, "Count-in notes are not scored");
+Check(beatClock.Observe(5030, 0) == 30, "Timing offset measured relative to software beat");
+Check(beatClock.Observe(5040, 0) is null, "Same beat cannot score twice");
+Check(beatClock.Observe(6130, 30) == 100, "Positive timing compensation subtracts measured lateness");
+Check(beatClock.ScoredNotes == 2 && beatClock.OnTimeNotes == 1, "Timing counts separate on-time and late notes");
+Check(Math.Abs(beatClock.MeanAbsoluteOffsetMs - 65) < 0.1, "Mean absolute timing offset correct");
+beatClock.Stop();
+Check(beatClock.Observe(7000, 0) is null, "Stopped metronome does not score");
+beatClock.Start(0, 120);
+Check(beatClock.BeatAt(1250) == 2 && Math.Abs(beatClock.PhaseAt(1250) - 0.5) < 0.01, "Visual beat follows selected tempo");
+var clicks = new ClickSignal(60);
+var clickSamples = Enumerable.Range(0, 96000).Select(_ => clicks.Next()).ToArray();
+Check(clickSamples.All(v => float.IsFinite(v) && Math.Abs(v) <= 0.12f), "Click audio is finite and level-limited");
+Check(clickSamples.Take(960).Any(v => v != 0) && clickSamples.Skip(48000).Take(960).Any(v => v != 0), "Sample clock produces regular clicks");
+Check(clickSamples.Skip(960).Take(47040).All(v => v == 0), "Silence between metronome clicks");
+
+var historyDirectory = Path.Combine(Path.GetTempPath(), $"fftruebard-history-{Guid.NewGuid():N}");
+try
+{
+    var path = Path.Combine(historyDirectory, "practice-history.json");
+    var history = new PracticeHistory(path);
+    Check(!File.Exists(path), "Opening history does not create files until practice");
+    for (var i = 0; i < 5; i++)
+        history.Observe("Em", "Am", "Em", 6, i > 1, i == 4);
+    var reloaded = new PracticeHistory(path);
+    Check(reloaded.Sessions.Single().Attempts == 5 && reloaded.Sessions.Single().Correct == 3, "History survives reload");
+    Check(reloaded.Sessions.Single().StringMisses["Em, string 6"] == 2, "History stores mistake locations");
+    Check(reloaded.Sessions.Single().CompletedChecks == 1, "Completed chord checks recorded");
+    Check(reloaded.Recommend().First == "Em" && reloaded.Recommend().Second == "Am", "Recommendation prioritises observed weak pair");
+    reloaded.NewSession();
+    reloaded.Observe("C", "G", "C", 5, true, false);
+    Check(reloaded.Sessions.Count == 2, "New exercise gets separate session");
+    for (var i = 0; i < 202; i++)
+    {
+        reloaded.NewSession();
+        reloaded.Observe("C", "G", "C", 5, true, false);
+    }
+    Check(reloaded.Sessions.Count == 200, "History retention bounded to 200 sessions");
+    File.WriteAllText(path, "invalid JSON");
+    var broken = new PracticeHistory(path);
+    broken.Observe("Em", "", "Em", 6, true, true);
+    Check(File.ReadAllText(path) == "invalid JSON", "Corrupt history preserved instead of overwritten");
+    Check(broken.Status.Contains("not be overwritten"), "History load failure visible");
+}
+finally
+{
+    if (Directory.Exists(historyDirectory))
+    {
+        foreach (var file in Directory.GetFiles(historyDirectory))
+            File.Delete(file);
+        Directory.Delete(historyDirectory);
+    }
+}
+Console.WriteLine($"PASS: {checks} total checks, including tuner, calibration, labelled tests, metronome, and saved history.");
