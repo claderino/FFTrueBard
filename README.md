@@ -40,6 +40,54 @@ instead of silently switching to your microphone. You can explicitly select
 **Windows default** if needed. Switching devices/channels stops an active debug
 recording; start another recording after the switch.
 
+## Edit note mappings
+
+The **Mappings** tab edits saved note-to-key/mouse assignments without rebuilding
+or editing configuration files. **Bindings are log-only:** this build does not
+send keyboard events or clicks, and it has no tap/hold behaviour yet.
+
+1. Select **Edit** beside a saved row, or enter a note and octave for a new row.
+   You can also choose a note from the dropdown.
+2. Optionally select **Pick a note to select it**, mute all strings, then pick
+   one isolated note. This fills the draft note after a confirmed detection;
+   it never saves a binding automatically. Selection times out after 15 seconds.
+3. Choose **Ignore**, **Keyboard**, or **Mouse**. For keyboard bindings, choose
+   a key and optionally add Ctrl, Shift, and Alt. Mouse buttons 1 through 5 are
+   supported; mouse movement and mouse modifier combinations are not.
+4. Review the draft and select **Save binding**. Updating a note replaces only
+   that note's assignment. Changing the note adds/updates the new note rather
+   than renaming or deleting the original row.
+5. To delete a row, select **Remove**, then **Confirm removal**. Other rows remain
+   unchanged. Use the filter to find a saved note or action.
+
+Note names are canonicalised: `Bb3` saves as `A#3`, and `e2` saves as `E2`.
+Supported rounded detector labels are C#2 through E6; the actual frequency range
+is 70 through 1300 Hz. Audio identifies pitch, not physical string/fret position:
+the same note on different strings shares a mapping, but different octaves do
+not. Several notes may intentionally share one action.
+
+Bindings retain the existing dictionary format, for example:
+
+```json
+{"E2":"Mouse1","F2":"Key:W","G3":"Key:Ctrl+Shift+1","E4":""}
+```
+
+Empty actions mean **Ignore**. Existing bindings are preserved. Unsupported
+stored actions and noncanonical note labels remain visible for manual repair;
+unsupported actions are not dispatched even in log-only mode. The editor
+supports individual keys/combinations, not action sequences or scripts.
+
+The bottom of the tab previews the current saved mapping for the last accepted
+note, including its frequency and timestamp. Practice and training tools block
+mapping previews by design. To inspect a `log-only` result, stop active tools,
+turn off **Practice mode**, and enable **Enable mapping preview**. Play a note;
+no physical input is sent. Previewing an old note never re-sends it. The debug
+JSONL log records the actual resolution when each new accepted note arrives.
+
+Mappings save in your local Dalamud configuration and survive plugin updates.
+They do not automatically sync between PCs. Note selection pauses chord checks;
+use **Stop tools and resume chord checks** when finished.
+
 ## Practise chords
 
 The **Chord practice** tab provides Em, Am, C, G, D, E, A, and Dm shapes for
@@ -231,7 +279,8 @@ dotnet run --project tests/FFTrueBard.Tests.csproj -c Release
 Tests cover pitch accuracy across sample rates and harmonics, noise rejection,
 stability/gating/rearming, chord progression, JSONL recording, tuner readings,
 calibration, labelled trials, rhythm scores/click synthesis, and history
-persistence/recommendations. CI runs these
+persistence/recommendations, mapping validation, binding persistence, preview
+routing, and note selection. CI runs these
 checks before building and publishing the plugin with its NAudio dependencies.
 Real guitar hardware and the in-game UI still require manual testing.
 
@@ -240,5 +289,5 @@ Real guitar hardware and the in-game UI still require manual testing.
 Dalamud and other third-party tools are against FFXIV's terms of service. This
 project does not provide protection from account enforcement.
 
-Future work includes real keyboard/mouse input, an in-game mapping editor, and
-polyphonic chord assessment. These features are not part of this build.
+Future work includes real keyboard/mouse input and polyphonic chord assessment.
+These features are not part of this build.

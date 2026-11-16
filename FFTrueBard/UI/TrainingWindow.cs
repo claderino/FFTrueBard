@@ -23,16 +23,17 @@ public sealed partial class ConfigWindow
     private object? testMetadata;
     private static long Now => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
     public bool ToolsExclusive => trainingPaused || tunerMode || calibration.Running || labelledTest.Running;
-    public string ExpectedContext => calibration.Running ? $"calibration:{calibration.Phase}" :
+    public string ExpectedContext => mappingCapture.Armed ? "mapping-note-selection" : calibration.Running ? $"calibration:{calibration.Phase}" :
         labelledTest.Running ? $"labelled-test:{labelledTest.Expected}:{labelledTest.Phase}" :
         tunerMode ? "tuner" : trainingPaused ? "practice-paused" : config.PracticeMode ? practice.Expected : "";
-    public string FeedbackContext => calibration.Running ? calibration.Status :
+    public string FeedbackContext => mappingCapture.Armed ? mappingCapture.Status : calibration.Running ? calibration.Status :
         labelledTest.Running ? $"{labelledTest.Phase}; trial {labelledTest.TrialNumber}/{labelledTest.TotalTrials}" :
         tunerMode ? "Tuning; chord grading paused." : trainingPaused ? "Chord grading paused after training tool." :
         config.PracticeMode ? practice.Feedback : "";
 
     public void Update()
     {
+        mappingCapture.Tick(Now);
         calibration.Tick(Now);
         labelledTest.Tick(Now);
         if (labelledTest.Phase == "complete" && !testSaved)
@@ -80,6 +81,7 @@ public sealed partial class ConfigWindow
 
     private void StopTools()
     {
+        mappingCapture.Cancel();
         CancelMeasurements();
         tunerMode = false;
         trainingPaused = false;

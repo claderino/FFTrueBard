@@ -60,12 +60,14 @@ public sealed class FFTrueBardPlugin : IDalamudPlugin
         {
             var expected = configWindow.ExpectedContext;
             configWindow.Receive(frame);
-            var action = config.PracticeMode || configWindow.ToolsExclusive ? "blocked:practice-tool" : "disabled";
-            if (!config.PracticeMode && !configWindow.ToolsExclusive && config.Enabled && frame.Decision == "accepted" &&
-                config.Mapping.TryGetValue(frame.Note, out var mapping) && !string.IsNullOrEmpty(mapping))
+            var action = "not-accepted";
+            if (frame.Decision == "accepted")
             {
-                inputInjector.Dispatch(mapping, isDown: true);
-                action = $"log-only:{mapping}";
+                var resolved = MappingRules.Resolve(config.Mapping, frame.Note, config.Enabled,
+                    config.PracticeMode || configWindow.ToolsExclusive);
+                if (resolved.Status == "log-only")
+                    inputInjector.Dispatch(resolved.Action, isDown: true);
+                action = resolved.LogValue;
             }
 
             recorder.Record(frame, detector.ActiveDevice, detector.SampleRate, detector.ActiveChannel,

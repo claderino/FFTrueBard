@@ -21,12 +21,15 @@ public sealed partial class ConfigWindow : IDisposable
         DebugRecorder recorder, Action save)
     {
         this.config = config;
+        config.Mapping ??= [];
         this.detector = detector;
         this.practice = practice;
         this.recorder = recorder;
         this.save = save;
         history = new PracticeHistory(Path.Combine(Path.GetDirectoryName(recorder.DirectoryPath)!, "practice-history.json"));
         ResetPractice();
+        if (config.Mapping.TryGetValue(mappingNote, out var initialAction))
+            LoadMapping(mappingNote, initialAction);
     }
 
     public void Open()
@@ -49,6 +52,7 @@ public sealed partial class ConfigWindow : IDisposable
     public void Receive(DetectionFrame frame)
     {
         latest = frame;
+        ReceiveMappingNote(frame);
         tuner.Receive(frame, tunerString);
         calibration.Receive(frame);
         labelledTest.Receive(frame);
@@ -100,6 +104,8 @@ public sealed partial class ConfigWindow : IDisposable
         if (!ImGui.Begin("FFTrueBard - Practice & diagnostics", ref visible))
         {
             ImGui.End();
+            if (!visible)
+                StopTools();
             return;
         }
 
@@ -122,6 +128,11 @@ public sealed partial class ConfigWindow : IDisposable
 
         if (ImGui.BeginTabBar("fftruebard_tabs"))
         {
+            if (ImGui.BeginTabItem("Mappings"))
+            {
+                DrawMappings();
+                ImGui.EndTabItem();
+            }
             if (ImGui.BeginTabItem("Chord practice"))
             {
                 DrawPractice();

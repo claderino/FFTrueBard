@@ -15,5 +15,7 @@
     <Compile Include="../FFTrueBard/Practice/BeatClock.cs" Link="BeatClock.cs" />
     <Compile Include="../FFTrueBard/Practice/PracticeHistory.cs" Link="PracticeHistory.cs" />
     <Compile Include="../FFTrueBard/Diagnostics/DebugRecorder.cs" Link="DebugRecorder.cs" />
+    <Compile Include="../FFTrueBard/Input/MappingRules.cs" Link="MappingRules.cs" />
+    <Compile Include="../FFTrueBard/Input/MappingNoteCapture.cs" Link="MappingNoteCapture.cs" />
   </ItemGroup>
 </Project>

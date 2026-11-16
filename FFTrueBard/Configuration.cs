@@ -5,7 +5,7 @@ namespace FFTrueBard;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 4;
+    public int Version { get; set; } = 5;
 
     public bool PracticeMode { get; set; } = true;
     public int PracticeChord { get; set; }
@@ -27,7 +27,7 @@ public sealed class Configuration : IPluginConfiguration
     public int InputChannel { get; set; }
 
     /// <summary>Detected note name (e.g. "E2", "A3") to in-game action.</summary>
-    /// Actions: "Mouse1".."Mouse5" or "Key:Space", "Key:1", ... Empty string = ignore.
+    /// Actions: "Mouse1".."Mouse5" or "Key:Space", "Key:Ctrl+Shift+1", ... Empty string = ignore.
     public Dictionary<string, string> Mapping { get; set; } = new()
     {
         // Open strings -> mouse buttons

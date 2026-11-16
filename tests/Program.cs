@@ -1,6 +1,7 @@
 using System.Text.Json;
 using FFTrueBard.Detection;
 using FFTrueBard.Diagnostics;
+using FFTrueBard.Input;
 using FFTrueBard.Practice;
 
 // Dependency-free regression runner: no game installation or audio hardware required.
@@ -337,3 +338,79 @@ finally
     }
 }
 Console.WriteLine($"PASS: {checks} total checks, including tuner, calibration, labelled tests, metronome, and saved history.");
+
+foreach (var (text, canonical, midi) in new[]
+{
+    ("E2", "E2", 40), (" e4 ", "E4", 64), ("f#3", "F#3", 54), ("Bb3", "A#3", 58),
+    ("Db3", "C#3", 49), ("Cb3", "B2", 47), ("B#2", "C3", 48), ("C#2", "C#2", 37), ("E6", "E6", 88),
+})
+    Check(MappingRules.TryNote(text, out var normalized, out var noteMidi) && normalized == canonical && noteMidi == midi,
+        $"Mapping note normalization: {text}");
+foreach (var invalid in new string?[] { null, "", "E", "E-2", "C2", "F6", "B1", "E10", "H3", "E2;A2", "E##3" })
+    Check(!MappingRules.TryNote(invalid, out _, out _), $"Invalid mapping note rejected: {invalid}");
+Check(MappingRules.Notes.Count == 52 && MappingRules.Notes.Distinct().Count() == 52, "Supported note list is bounded and unique");
+foreach (var note in MappingRules.Notes)
+    Check(MappingRules.TryNote(note, out var same, out _) && same == note, "Every selectable note validates");
+
+foreach (var key in MappingRules.Keys)
+{
+    Check(MappingRules.TryBinding($"Key:{key}", out var binding) && binding.Kind == BindingKind.Keyboard && binding.Key == key,
+        $"Selectable keyboard key validates: {key}");
+    Check(MappingRules.TryBinding(binding.Canonical, out var roundTrip) && roundTrip == binding,
+        $"Keyboard binding round-trips: {key}");
+}
+for (var button = 1; button <= 5; button++)
+    Check(MappingRules.TryBinding($"mouse{button}", out var mouse) && mouse.Canonical == $"Mouse{button}", "Mouse buttons 1-5 validate");
+Check(MappingRules.TryBinding(" key:alt+control+shift+esc ", out var modifiers) &&
+    modifiers.Canonical == "Key:Ctrl+Shift+Alt+Escape", "Modifier ordering, aliases, and case normalized");
+Check(MappingRules.TryBinding("Key:Ctrl+1", out _), "Ctrl-number binding supported");
+Check(MappingRules.TryBinding("", out var ignore) && ignore.Kind == BindingKind.Ignore, "Empty legacy action means ignore");
+foreach (var invalid in new string?[] { null, "Mouse0", "Mouse6", "Mouse10", "Mouse01", "Key:", "Key:F25", "Key:Meta+1",
+    "Key:Ctrl+Ctrl+1", "Key:Control+Ctrl+1", "Key:Shift+LeftShift", "Key:Ctrl+RightCtrl", "Key:Alt+Alt",
+    "Key:A+W", "Key:Ctrl++1", "Key:Ctrl+Mouse1", "Key:1,2", "Macro:123" })
+    Check(!MappingRules.TryBinding(invalid, out _), $"Invalid/unsupported mapping action rejected: {invalid}");
+
+var mappings = new Dictionary<string, string> { ["E2"] = "Mouse1", ["A2"] = "Mouse2", ["E4"] = "", ["legacy-note"] = "legacy-action" };
+var beforeInvalid = JsonSerializer.Serialize(mappings);
+Check(!MappingRules.TrySet(mappings, "bad note", "Key:1", out _, out _) && JsonSerializer.Serialize(mappings) == beforeInvalid,
+    "Invalid note never changes saved mappings");
+Check(!MappingRules.TrySet(mappings, "E2", "Key:Unknown", out _, out _) && JsonSerializer.Serialize(mappings) == beforeInvalid,
+    "Invalid action never overwrites an existing binding");
+Check(MappingRules.TrySet(mappings, "e2", "Key:shift+1", out var savedNote, out _) && savedNote == "E2" && mappings["E2"] == "Key:Shift+1",
+    "Updating a note canonicalizes its binding");
+Check(mappings["A2"] == "Mouse2" && mappings["legacy-note"] == "legacy-action", "Other existing and unsupported rows preserved");
+Check(MappingRules.TrySet(mappings, "Bb3", "Mouse4", out _, out _) && mappings["A#3"] == "Mouse4", "New flat-labelled note saved canonically");
+Check(MappingRules.TrySet(mappings, "D3", "Key:Shift+1", out _, out _), "Intentional many-notes-to-one-action binding allowed");
+var savedMappings = JsonSerializer.Deserialize<Dictionary<string, string>>(JsonSerializer.Serialize(mappings))!;
+Check(savedMappings["E2"] == "Key:Shift+1" && savedMappings["E4"] == "", "Existing dictionary storage format round-trips with modifier bindings");
+Check(MappingRules.Resolve(savedMappings, "E2", true, false).LogValue == "log-only:Key:Shift+1", "Saved keyboard mapping resolves to log-only action");
+Check(MappingRules.Resolve(savedMappings, "A#3", true, false).Action == "Mouse4", "Saved side-button mapping resolves");
+Check(MappingRules.Resolve(savedMappings, "E2", true, true).Status == "blocked:practice-tool", "Practice/tool state blocks mapping route");
+Check(MappingRules.Resolve(savedMappings, "E2", false, false).Status == "disabled", "Mapping enable switch respected");
+Check(MappingRules.Resolve(savedMappings, "E4", true, false).Status == "ignored", "Explicit ignore distinguished from missing mapping");
+Check(MappingRules.Resolve(savedMappings, "F2", true, false).Status == "unmapped", "Unassigned note has no action");
+savedMappings["E2"] = "invalid action";
+Check(MappingRules.Resolve(savedMappings, "E2", true, false).Status == "invalid-mapping", "Unsupported stored action cannot reach dispatcher");
+Check(MappingRules.Resolve(savedMappings, "legacy-note", true, false).Status == "unsupported-note", "Unsupported note cannot reach dispatcher");
+savedMappings.Remove("A2");
+Check(savedMappings.ContainsKey("E4") && !savedMappings.ContainsKey("A2"), "Removing one row leaves other bindings intact");
+
+var captureNote = new MappingNoteCapture();
+captureNote.Arm(1000);
+Check(captureNote.Receive(Mute(900)) is null && captureNote.Armed, "Note selection ignores queued frames from before arming");
+Check(captureNote.Receive(Heard(40, 1020) with { Note = "E2" }) is null, "Note selection requires fresh muting first");
+captureNote.Receive(Mute(1100));
+Check(captureNote.Receive(Heard(49, 1140) with { Note = "C#3", Decision = "stabilizing" }) is null,
+    "Note selection waits for confirmed detection");
+Check(captureNote.Receive(Heard(49, 1180) with { Note = "C#3" }) == "C#3" && !captureNote.Armed, "Confirmed pitch selects a draft note once");
+Check(captureNote.Receive(Heard(40, 1220) with { Note = "E2" }) is null, "Later notes do not replace completed selection");
+captureNote.Arm(2000);
+captureNote.Tick(17000);
+Check(!captureNote.Armed && captureNote.Status.Contains("timed out"), "Note selection times out without audio");
+captureNote.Arm(20000);
+captureNote.Cancel();
+Check(!captureNote.Armed && captureNote.Receive(Mute(20010)) is null, "Cancelled selection stops listening");
+captureNote.Reset();
+Check(!captureNote.Armed && captureNote.Status == "", "Manual draft selection clears stale capture status");
+Check(JsonSerializer.Serialize(mappings) != beforeInvalid && mappings["A2"] == "Mouse2", "Note selection does not mutate mappings");
+Console.WriteLine($"PASS: {checks} total checks, including mapping validation, persistence, preview routing, and note selection.");
