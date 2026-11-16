@@ -5,6 +5,7 @@ obj/
 *.user
 *.suo
 *.binlog
+artifacts/
 
 # Python detector
 __pycache__/

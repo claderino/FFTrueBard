@@ -7,12 +7,18 @@ namespace FFTrueBard.Detection;
 public static class YinPitch
 {
     public static float Detect(float[] y, int sampleRate, float fMin, float fMax, float threshold)
+        => Analyze(y, sampleRate, fMin, fMax, threshold).Frequency;
+
+    public static (float Frequency, float Confidence) Analyze(float[] y, int sampleRate,
+        float fMin, float fMax, float threshold)
     {
+        if (sampleRate <= 0 || fMin <= 0 || fMax <= fMin || threshold <= 0 || threshold >= 1)
+            return (0, 0);
         var w = Math.Min(y.Length / 2, 1024);
         var maxTau = (int)(sampleRate / fMin);
         var minTau = Math.Max(2, (int)(sampleRate / fMax));
         if (y.Length < maxTau + w || w <= minTau + 2)
-            return 0f;
+            return (0, 0);
 
         // Difference function d(tau)
         var d = new float[maxTau + 1];
@@ -39,19 +45,22 @@ public static class YinPitch
             cmnd[tau] = runningSum > 0f ? d[tau] * tau / runningSum : 1f;
         }
 
-        // Absolute threshold: first local dip below threshold
+        // Follow the first threshold crossing to its local minimum. Interpolating
+        // the crossing itself biases the pitch sharp, especially on low strings.
         var found = -1;
         for (var tau = minTau; tau < maxTau; tau++)
         {
             if (cmnd[tau] < threshold)
             {
+                while (tau + 1 <= maxTau && cmnd[tau + 1] < cmnd[tau])
+                    tau++;
                 found = tau;
                 break;
             }
         }
 
         if (found < 0)
-            return 0f;
+            return (0, 0);
 
         // Parabolic interpolation around the minimum
         var tauF = (float)found;
@@ -65,6 +74,9 @@ public static class YinPitch
                 tauF += (s2 - s0) / denom;
         }
 
-        return sampleRate / tauF;
+        var frequency = sampleRate / tauF;
+        return float.IsFinite(frequency) && frequency >= fMin && frequency <= fMax
+            ? (frequency, Math.Clamp(1 - cmnd[found], 0, 1))
+            : (0, 0);
     }
 }

@@ -5,236 +5,180 @@ using NAudio.Wave;
 
 namespace FFTrueBard.Detection;
 
-/// <summary>A single detected note event.</summary>
-public sealed record NoteEvent(string Note, double Freq, float Amp, long TimestampMs);
-
-/// <summary>
-/// Self-contained guitar detector: WASAPI capture (NAudio) -> YIN pitch
-/// detection -> note events. Replaces the old external Python detector.
-/// </summary>
-public sealed class GuitarDetector : IDisposable
+/// <summary>WASAPI capture and pitch processing off the game thread.</summary>
+public sealed class GuitarDetector(Configuration config, IPluginLog log) : IDisposable
 {
-    private const int SampleRate = 48000;
-    private const int FrameLen = 2048; // ~43 ms
-    private const float FMin = 70f;    // low E-ish (E2 = 82.4 Hz)
-    private const float FMax = 1300f;
-    private static readonly string[] NoteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-
-    private readonly Configuration config;
-    private readonly IPluginLog log;
-    private readonly Channel<float[]> rawBlocks =
-        Channel.CreateUnbounded<float[]>(new UnboundedChannelOptions { SingleReader = true });
-    private readonly Channel<NoteEvent> notes =
-        Channel.CreateUnbounded<NoteEvent>(new UnboundedChannelOptions { SingleReader = true });
-
-    private CancellationTokenSource? cts;
+    private readonly Channel<DetectionFrame> frames = Channel.CreateBounded<DetectionFrame>(128);
+    private DetectionSettings settings = config.GetDetectionSettings();
+    private CancellationTokenSource? cancellation;
+    private Task? worker;
     private WasapiCapture? capture;
     private MMDevice? device;
+    private long droppedAudioBlocks;
+    private long droppedDetectionFrames;
 
-    public GuitarDetector(Configuration config, IPluginLog log)
-    {
-        this.config = config;
-        this.log = log;
-    }
-
-    /// <summary>Detected notes for the game-thread pump.</summary>
-    public ChannelReader<NoteEvent> Notes => notes.Reader;
-
+    public ChannelReader<DetectionFrame> Frames => frames.Reader;
     public string StatusText { get; private set; } = "Not started";
-
-    /// <summary>Friendly names of active capture devices (for the device picker).</summary>
+    public string ActiveDevice { get; private set; } = "";
+    public int SampleRate { get; private set; }
+    public long DroppedAudioBlocks => Interlocked.Read(ref droppedAudioBlocks);
+    public long DroppedDetectionFrames => Interlocked.Read(ref droppedDetectionFrames);
+    public int ActiveChannel { get; private set; }
     public IReadOnlyList<string> DeviceNames { get; private set; } = [];
+
+    public void ApplySettings() => Volatile.Write(ref settings, config.GetDetectionSettings());
 
     public void RefreshDevices()
     {
-        var enumerator = new MMDeviceEnumerator();
-        DeviceNames = enumerator
-            .EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active)
-            .Select(d => d.FriendlyName)
-            .ToArray();
+        try
+        {
+            using var enumerator = new MMDeviceEnumerator();
+            var names = new List<string>();
+            foreach (var endpoint in enumerator.EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active))
+            {
+                using (endpoint)
+                    names.Add(endpoint.FriendlyName);
+            }
+            DeviceNames = names;
+        }
+        catch (Exception e)
+        {
+            StatusText = $"Could not list devices: {e.Message}";
+            log.Error(e, "FFTrueBard: device enumeration failed.");
+        }
     }
 
-    /// <summary>Start capturing, resolving the device from the config (substring match, else default).</summary>
     public void Start()
     {
-        var enumerator = new MMDeviceEnumerator();
-        MMDevice? dev = null;
-        var wanted = config.DeviceName;
-
-        if (!string.IsNullOrWhiteSpace(wanted))
-        {
-            dev = enumerator
-                .EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active)
-                .FirstOrDefault(d => d.FriendlyName.Contains(wanted, StringComparison.OrdinalIgnoreCase));
-        }
-
-        dev ??= enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Console);
-        Start(dev);
-    }
-
-    public void Start(MMDevice dev)
-    {
         Stop();
-        device = dev;
-
-        cts = new CancellationTokenSource();
-        capture = new WasapiCapture(dev)
+        try
         {
-            WaveFormat = WaveFormat.CreateIeeeFloatWaveFormat(SampleRate, 1),
-        };
-        capture.DataAvailable += OnDataAvailable;
-        capture.RecordingStopped += OnRecordingStopped;
+            using var enumerator = new MMDeviceEnumerator();
+            if (string.IsNullOrWhiteSpace(config.DeviceName))
+                device = enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Console);
+            else
+            {
+                foreach (var endpoint in enumerator.EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active))
+                {
+                    if (device is null && endpoint.FriendlyName.Contains(config.DeviceName, StringComparison.OrdinalIgnoreCase))
+                        device = endpoint;
+                    else
+                        endpoint.Dispose();
+                }
+            }
 
-        _ = Task.Run(() => DetectionLoop(cts.Token));
-        capture.StartRecording();
-        StatusText = $"Capturing '{dev.FriendlyName}' @ {SampleRate} Hz";
-        log.Info($"FFTrueBard: {StatusText}");
-    }
+            if (device is null)
+            {
+                StatusText = $"No input matching '{config.DeviceName}'. Select your guitar interface below.";
+                return; // Never silently record a different microphone.
+            }
 
-    /// <summary>Restart with the device currently configured (used when the user picks a new device).</summary>
-    public void Restart() => Start();
+            capture = new WasapiCapture(device);
+            var format = capture.WaveFormat;
+            var floating = format.Encoding == WaveFormatEncoding.IeeeFloat ||
+                format is WaveFormatExtensible ext && ext.SubFormat == new Guid("00000003-0000-0010-8000-00aa00389b71");
+            var pcm = format.Encoding == WaveFormatEncoding.Pcm ||
+                format is WaveFormatExtensible pcmExt && pcmExt.SubFormat == new Guid("00000001-0000-0010-8000-00aa00389b71");
+            if ((!floating || format.BitsPerSample != 32) &&
+                (!pcm || format.BitsPerSample is not (16 or 24 or 32)))
+                throw new NotSupportedException($"Unsupported input format: {format}");
 
-    /// <summary>Start capturing from the device with this exact friendly name.</summary>
-    public void StartWith(string friendlyName)
-    {
-        var enumerator = new MMDeviceEnumerator();
-        var dev = enumerator
-            .EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active)
-            .FirstOrDefault(d => d.FriendlyName == friendlyName);
-        if (dev is null)
-        {
-            log.Warning($"FFTrueBard: device '{friendlyName}' not found; falling back.");
-            Start();
-            return;
+            ActiveDevice = device.FriendlyName;
+            SampleRate = format.SampleRate;
+            var channel = Math.Clamp(config.InputChannel, 0, format.Channels - 1);
+            ActiveChannel = channel + 1;
+            var blocks = Channel.CreateBounded<float[]>(4);
+            var source = new CancellationTokenSource();
+            cancellation = source;
+            var rate = SampleRate;
+            capture.DataAvailable += (_, e) =>
+            {
+                if (source.IsCancellationRequested)
+                    return;
+                var mono = new float[e.BytesRecorded / format.BlockAlign];
+                var bytesPerSample = format.BitsPerSample / 8;
+                for (var i = 0; i < mono.Length; i++)
+                {
+                    var offset = i * format.BlockAlign + channel * bytesPerSample;
+                    mono[i] = floating ? BitConverter.ToSingle(e.Buffer, offset) : format.BitsPerSample switch
+                    {
+                        16 => BitConverter.ToInt16(e.Buffer, offset) / 32768f,
+                        24 => ((e.Buffer[offset] | e.Buffer[offset + 1] << 8 | e.Buffer[offset + 2] << 16) << 8 >> 8) / 8388608f,
+                        _ => BitConverter.ToInt32(e.Buffer, offset) / 2147483648f,
+                    };
+                }
+                if (!blocks.Writer.TryWrite(mono))
+                    Interlocked.Increment(ref droppedAudioBlocks);
+            };
+            capture.RecordingStopped += (_, e) =>
+            {
+                source.Cancel();
+                if (e.Exception is not null)
+                {
+                    StatusText = $"Capture stopped: {e.Exception.Message}";
+                    log.Error(e.Exception, "FFTrueBard: audio capture stopped.");
+                }
+            };
+            worker = Task.Run(() => DetectionLoop(blocks.Reader, rate, source.Token));
+            capture.StartRecording();
+            StatusText = $"Capturing '{ActiveDevice}' at {rate} Hz, channel {channel + 1}/{format.Channels}";
         }
-
-        Start(dev);
-    }
-
-    private void OnDataAvailable(object? sender, WaveInEventArgs e)
-    {
-        // e.Buffer is managed IEEE float32 little-endian data.
-        var bytes = e.BytesRecorded - (e.BytesRecorded % sizeof(float));
-        var floats = new float[bytes / sizeof(float)];
-        Buffer.BlockCopy(e.Buffer, 0, floats, 0, bytes);
-        rawBlocks.Writer.TryWrite(floats);
-    }
-
-    private void OnRecordingStopped(object? sender, StoppedEventArgs e)
-    {
-        StatusText = e.Exception is null ? "Stopped" : $"Stopped: {e.Exception.Message}";
-        if (e.Exception is not null)
-            log.Error($"FFTrueBard: capture stopped - {e.Exception}");
-    }
-
-    private void DetectionLoop(CancellationToken ct)
-    {
-        var pending = new float[1 << 16];
-        var count = 0;
-        var frame = new float[FrameLen];
-        var stable = Math.Max(1, config.StableFrames);
-        var candidates = new Queue<string>();
-        string? lastNote = null;
-        double lastSentMs = 0;
-
-        while (!ct.IsCancellationRequested)
+        catch (Exception e)
         {
-            float[] block;
-            try
-            {
-                block = rawBlocks.Reader.ReadAsync(ct).AsTask().GetAwaiter().GetResult();
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-
-            // Append block to the pending buffer, growing if needed.
-            if (count + block.Length > pending.Length)
-            {
-                var bigger = new float[Math.Max(pending.Length * 2, count + block.Length)];
-                Array.Copy(pending, bigger, count);
-                pending = bigger;
-            }
-
-            Array.Copy(block, 0, pending, count, block.Length);
-            count += block.Length;
-
-            // Process complete frames.
-            while (count >= FrameLen)
-            {
-                Array.Copy(pending, frame, FrameLen);
-                Array.Copy(pending, FrameLen, pending, 0, count - FrameLen);
-                count -= FrameLen;
-
-                DetectFrame(frame, stable, candidates, ref lastNote, ref lastSentMs);
-            }
+            Stop();
+            StatusText = $"Capture unavailable: {e.Message}";
+            log.Error(e, "FFTrueBard: audio initialization failed. Select a device and retry.");
         }
     }
 
-    private void DetectFrame(float[] frame, int stable, Queue<string> candidates,
-        ref string? lastNote, ref double lastSentMs)
+    private async Task DetectionLoop(ChannelReader<float[]> blocks, int rate, CancellationToken ct)
     {
-        // Amplitude gate - skip DSP while silent.
-        float sumSquares = 0f;
-        for (var i = 0; i < frame.Length; i++)
-            sumSquares += frame[i] * frame[i];
-        var rms = MathF.Sqrt(sumSquares / frame.Length);
-        if (rms < config.RmsGate)
+        try
         {
-            candidates.Clear();
-            return;
+            var processor = new PitchProcessor(rate);
+            var frame = new float[Math.Max(1024, (int)(2048L * rate / 48000))];
+            var count = 0;
+            await foreach (var block in blocks.ReadAllAsync(ct))
+            {
+                foreach (var sample in block)
+                {
+                    if (ct.IsCancellationRequested)
+                        return;
+                    frame[count++] = sample;
+                    if (count != frame.Length)
+                        continue;
+                    if (!frames.Writer.TryWrite(processor.Process(frame,
+                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), Volatile.Read(ref settings))))
+                        Interlocked.Increment(ref droppedDetectionFrames);
+                    count = 0;
+                }
+            }
         }
-
-        var freq = YinPitch.Detect(frame, SampleRate, FMin, FMax, config.DetectionThreshold);
-        if (freq <= 0f)
-            return;
-
-        var midi = 69.0 + 12.0 * Math.Log2(freq / 440.0);
-        var m = (int)Math.Round(midi);
-        var note = $"{NoteNames[m % 12]}{m / 12 - 1}";
-
-        candidates.Enqueue(note);
-        while (candidates.Count > stable)
-            candidates.Dequeue();
-        if (candidates.Count(n => n == note) < stable)
-            return;
-
-        var nowMs = (double)Environment.TickCount64;
-        if (note == lastNote && nowMs - lastSentMs < config.RetriggerMs)
-            return;
-
-        lastNote = note;
-        lastSentMs = nowMs;
-        notes.Writer.TryWrite(new NoteEvent(note, Math.Round(freq, 2), rms, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+        catch (OperationCanceledException) { }
+        catch (Exception e)
+        {
+            StatusText = $"Detection stopped: {e.Message}";
+            log.Error(e, "FFTrueBard: pitch processing failed.");
+        }
     }
 
     private void Stop()
     {
-        cts?.Cancel();
-        if (capture is not null)
-        {
-            capture.DataAvailable -= OnDataAvailable;
-            capture.RecordingStopped -= OnRecordingStopped;
-            try
-            {
-                capture.StopRecording();
-            }
-            catch
-            {
-            }
-
-            capture.Dispose();
-            capture = null;
-        }
-
+        cancellation?.Cancel();
+        capture?.Dispose(); // Stops the capture thread before disposing its token source.
+        capture = null;
+        worker?.GetAwaiter().GetResult();
+        worker = null;
+        cancellation?.Dispose();
+        cancellation = null;
         device?.Dispose();
         device = null;
+        while (frames.Reader.TryRead(out _)) { }
+        ActiveDevice = "";
+        SampleRate = 0;
+        ActiveChannel = 0;
+        StatusText = "Stopped";
     }
 
-    public void Dispose()
-    {
-        Stop();
-        cts?.Dispose();
-    }
+    public void Dispose() => Stop();
 }

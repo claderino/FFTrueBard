@@ -5,7 +5,13 @@ namespace FFTrueBard;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 2;
+    public int Version { get; set; } = 3;
+
+    public bool PracticeMode { get; set; } = true;
+    public int PracticeChord { get; set; }
+    public int TransitionChord { get; set; } = 1;
+    public bool AlternateChords { get; set; }
+    public float PracticeCentsTolerance { get; set; } = 35;
 
     /// <summary>Master switch. When off, notes are still displayed but not injected.</summary>
     public bool Enabled { get; set; } = true;
@@ -15,6 +21,7 @@ public sealed class Configuration : IPluginConfiguration
     /// Empty = use the Windows default capture device.
     /// </summary>
     public string DeviceName { get; set; } = "NUX";
+    public int InputChannel { get; set; }
 
     /// <summary>Detected note name (e.g. "E2", "A3") to in-game action.</summary>
     /// Actions: "Mouse1".."Mouse5" or "Key:Space", "Key:1", ... Empty string = ignore.
@@ -40,4 +47,10 @@ public sealed class Configuration : IPluginConfiguration
     public float RmsGate { get; set; } = 0.004f;
     public int RetriggerMs { get; set; } = 150;
     public int StableFrames { get; set; } = 2;
+    public int ReleaseMs { get; set; } = 100;
+
+    public Detection.DetectionSettings GetDetectionSettings() => new(
+        Math.Clamp(DetectionThreshold, 0.02f, 0.5f), Math.Clamp(RmsGate, 0.0001f, 0.2f),
+        Math.Clamp(StableFrames, 1, 10), Math.Clamp(RetriggerMs, 0, 1000),
+        Math.Clamp(ReleaseMs, 40, 1000));
 }

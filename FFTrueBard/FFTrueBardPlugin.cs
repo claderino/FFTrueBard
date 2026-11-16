@@ -3,7 +3,9 @@ using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using FFTrueBard.Detection;
+using FFTrueBard.Diagnostics;
 using FFTrueBard.Input;
+using FFTrueBard.Practice;
 using FFTrueBard.UI;
 
 namespace FFTrueBard;
@@ -21,12 +23,17 @@ public sealed class FFTrueBardPlugin : IDalamudPlugin
     private readonly GuitarDetector detector;
     private readonly IInputInjector inputInjector;
     private readonly ConfigWindow configWindow;
+    private readonly ChordPractice practice;
+    private readonly DebugRecorder recorder;
 
     public FFTrueBardPlugin()
     {
         config = (Configuration?)PluginInterface.GetPluginConfig() ?? new Configuration();
         detector = new GuitarDetector(config, Log);
-        configWindow = new ConfigWindow(config, detector);
+        practice = new ChordPractice();
+        recorder = new DebugRecorder(Path.Combine(PluginInterface.GetPluginConfigDirectory(), "diagnostics"));
+        configWindow = new ConfigWindow(config, detector, practice, recorder,
+            () => PluginInterface.SavePluginConfig(config));
 
         // Swap in a real injector implementation when ready (see InputInjector.cs).
         inputInjector = new DummyInputInjector(Log);
@@ -49,15 +56,23 @@ public sealed class FFTrueBardPlugin : IDalamudPlugin
 
     private void OnFrameworkUpdate(IFramework framework)
     {
-        while (detector.Notes.TryRead(out var ev))
+        while (detector.Frames.TryRead(out var frame))
         {
-            configWindow.PushEvent(ev.Note, ev.Amp);
+            configWindow.Receive(frame);
+            var expected = config.PracticeMode ? practice.Expected : "";
+            var action = config.PracticeMode ? "blocked:practice" : "disabled";
+            if (config.PracticeMode)
+                practice.Receive(frame, Math.Clamp(config.PracticeCentsTolerance, 5, 50));
+            else if (config.Enabled && frame.Decision == "accepted" &&
+                config.Mapping.TryGetValue(frame.Note, out var mapping) && !string.IsNullOrEmpty(mapping))
+            {
+                inputInjector.Dispatch(mapping, isDown: true);
+                action = $"log-only:{mapping}";
+            }
 
-            if (!config.Enabled)
-                continue;
-
-            if (config.Mapping.TryGetValue(ev.Note, out var action) && !string.IsNullOrEmpty(action))
-                inputInjector.Dispatch(action, isDown: true);
+            recorder.Record(frame, detector.ActiveDevice, detector.SampleRate, detector.ActiveChannel,
+                expected, config.PracticeMode ? practice.Feedback : "", action, detector.DroppedAudioBlocks,
+                config.PracticeCentsTolerance, detector.DroppedDetectionFrames);
         }
     }
 
@@ -68,6 +83,7 @@ public sealed class FFTrueBardPlugin : IDalamudPlugin
         PluginInterface.UiBuilder.Draw -= configWindow.Draw;
         PluginInterface.UiBuilder.OpenConfigUi -= configWindow.Open;
         detector.Dispose();
+        recorder.Dispose();
         PluginInterface.SavePluginConfig(config);
     }
 }

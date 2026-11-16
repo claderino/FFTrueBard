@@ -29,33 +29,29 @@ jobs:
           Invoke-WebRequest -Uri https://goatcorp.github.io/dalamud-distrib/latest.zip -OutFile latest.zip
           Expand-Archive -Force latest.zip "$env:AppData\XIVLauncher\addon\Hooks\dev"
 
+      - name: Test pitch, practice, and diagnostics
+        run: dotnet run --project tests/FFTrueBard.Tests.csproj -c Release
+
       - name: Build (timestamped version)
         shell: pwsh
         run: |
           $ver = (Get-Date).ToUniversalTime().ToString('yyyy.MM.dd.HHmm')
           "VER=$ver" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
-          dotnet build FFTrueBard/FFTrueBard.csproj -c Release "-p:Version=$ver"
+          dotnet build FFTrueBard/FFTrueBard.csproj -c Release -o artifacts/plugin "-p:Version=$ver"
 
       - name: Package release zip
         shell: pwsh
         env:
           REPO: ${{ github.repository }}
         run: |
-          # Prefer a DalamudPackager-produced zip if the SDK made one.
-          $zip = Get-ChildItem -Path . -Recurse -Filter 'FFTrueBard.zip' |
-                 Sort-Object LastWriteTime -Descending | Select-Object -First 1
-
-          if (-not $zip) {
-            $dll = Get-ChildItem -Path . -Recurse -Filter 'FFTrueBard.dll' |
-                   Sort-Object LastWriteTime -Descending | Select-Object -First 1
-            if (-not $dll) { throw 'FFTrueBard.dll was not produced by the build.' }
-            $outDir = $dll.DirectoryName
+            $outDir = Join-Path $pwd 'artifacts/plugin'
+            if (-not (Test-Path "$outDir/FFTrueBard.dll")) { throw 'Plugin build output missing.' }
 
             $manifest = [ordered]@{
               Author              = 'claderino'
               Name                = 'FFTrueBard'
               Punchline           = 'Play Final Fantasy XIV with an electric guitar.'
-              Description         = 'Guitar-to-input bridge. A local note detector streams note events over localhost; the plugin maps them to in-game keyboard/mouse input.'
+              Description         = 'Built-in guitar detector, guided open-chord practice, live tuning, and opt-in local frequency diagnostics. Game input injection is not implemented.'
               InternalName        = 'FFTrueBard'
               AssemblyVersion     = $env:VER
               RepoUrl             = "https://github.com/$env:REPO"
@@ -67,13 +63,9 @@ jobs:
             ConvertTo-Json $manifest -Depth 6 |
               Set-Content -Encoding utf8 (Join-Path $outDir 'FFTrueBard.json')
 
-            Compress-Archive -Path "$outDir/*" -DestinationPath .\FFTrueBard.zip -Force
+            $files = Get-ChildItem $outDir -File | Where-Object { $_.Extension -in '.dll', '.json' }
+            Compress-Archive -Path $files.FullName -DestinationPath .\FFTrueBard.zip -Force
             Write-Host "Packaged manually from $outDir"
-          }
-          else {
-            Copy-Item $zip.FullName .\FFTrueBard.zip -Force
-            Write-Host "Packaged by DalamudPackager: $($zip.FullName)"
-          }
 
       - name: Generate pluginmaster.json
         shell: pwsh
@@ -85,7 +77,7 @@ jobs:
             Author                  = 'claderino'
             Name                    = 'FFTrueBard'
             Punchline               = 'Play Final Fantasy XIV with an electric guitar.'
-            Description             = 'Guitar-to-input bridge. A local note detector streams note events over localhost; the plugin maps them to in-game keyboard/mouse input.'
+            Description             = 'Built-in guitar detector, guided open-chord practice, live tuning, and opt-in local frequency diagnostics. Game input injection is not implemented.'
             InternalName            = 'FFTrueBard'
             AssemblyVersion         = $env:VER
             TestingAssemblyVersion  = $env:VER
@@ -98,6 +90,7 @@ jobs:
             DownloadUrlInstall      = $zipUrl
             DownloadUrlUpdate       = $zipUrl
             DownloadUrlTesting      = $zipUrl
+            DownloadLinkInstall     = $zipUrl
             DownloadLinkUpdate      = $zipUrl
             DownloadLinkTesting     = $zipUrl
           }
