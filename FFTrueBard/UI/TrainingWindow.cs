@@ -22,11 +22,11 @@ public sealed partial class ConfigWindow
     private string reportStatus = "";
     private object? testMetadata;
     private static long Now => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-    public bool ToolsExclusive => trainingPaused || tunerMode || calibration.Running || labelledTest.Running || lessonPlayer.Playing;
-    public string ExpectedContext => mappingCapture.Armed ? "mapping-note-selection" : calibration.Running ? $"calibration:{calibration.Phase}" :
+    public bool ToolsExclusive => trainingPaused || tunerMode || calibration.Running || labelledTest.Running || lessonPlayer.Playing || lessonPitch.Running;
+    public string ExpectedContext => lessonPitch.Running ? $"lesson-pitch:{lessonPitch.Sequence!.Exercise}:{lessonPitch.Index + 1}" : mappingCapture.Armed ? "mapping-note-selection" : calibration.Running ? $"calibration:{calibration.Phase}" :
         labelledTest.Running ? $"labelled-test:{labelledTest.Expected}:{labelledTest.Phase}" :
         tunerMode ? "tuner" : trainingPaused ? "practice-paused" : config.PracticeMode ? practice.Expected : "";
-    public string FeedbackContext => mappingCapture.Armed ? mappingCapture.Status : calibration.Running ? calibration.Status :
+    public string FeedbackContext => lessonPitch.Running ? $"lesson-pitch:{lessonPitch.State}" : mappingCapture.Armed ? mappingCapture.Status : calibration.Running ? calibration.Status :
         labelledTest.Running ? $"{labelledTest.Phase}; trial {labelledTest.TrialNumber}/{labelledTest.TotalTrials}" :
         tunerMode ? "Tuning; chord grading paused." : trainingPaused ? "Chord grading paused after training tool." :
         config.PracticeMode ? practice.Feedback : "";
@@ -34,6 +34,7 @@ public sealed partial class ConfigWindow
     public void Update()
     {
         UpdateLessons();
+        UpdateLessonPitch();
         UpdateSupport();
         mappingCapture.Tick(Now);
         calibration.Tick(Now);
@@ -65,6 +66,7 @@ public sealed partial class ConfigWindow
 
     private void CancelMeasurements()
     {
+        lessonPitch.Stop();
         if (calibration.Running)
             calibration.Cancel();
         if (labelledTest.Running)

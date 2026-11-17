@@ -87,7 +87,7 @@ clean guitar capture channel so the detector does not hear the backing track.
 
 Loading does not start playback automatically. Weekly tracks contain several
 exercises: set the individual exercise boundaries yourself. No timestamps,
-PDF page links, notation extraction, speed changes, or automatic exercise
+PDF page links, notation extraction, speed changes, or playback-synchronized
 grading are provided. Loop boundaries operate on decoded audio frames; seeking
 and boundary changes can take about one output buffer to become audible.
 
@@ -110,6 +110,87 @@ Progress and notes save in `lesson-progress.json` next to `diagnostics`. The
 previous saved version is retained as `lesson-progress.json.bak`. They do not
 automatically sync between PCs. Each exercise supports up to 2,000 characters
 of notes. A marked completion does not mean the detector verified the exercise.
+
+### Check pitch order visually
+
+The **Visual pitch-order drill** checks one note at a time against a local,
+reviewed sequence. This pilot is deliberately slow: pick, mute all strings,
+wait for **READY**, then pick again. It does not evaluate rhythm, picking
+direction, fingering, or performance along with the MP3.
+
+To start a drill:
+
+1. Connect your dry guitar input and check **Audio & tuning**.
+2. In **Lessons**, choose the exercise under **Lesson selection and
+   self-reported progress**.
+3. Expand **Pitch targets and setup**. Leave **Pitch-sequence file override**
+   blank to discover `fftruebard-lessons/exercise-NNN.notes.json` under the
+   saved lesson root. With only a PDF location set, discovery uses a sibling
+   `fftruebard-lessons` folder. Alternatively, browse to a local `.notes.json`
+   file and select **Save sequence location and load**.
+4. Expand **Review expected sequence** and compare the targets with your
+   lesson. Check **I reviewed these targets against my lesson**. An exercise
+   number mismatch prevents loading; arbitrary local files are not certified
+   by the plugin.
+5. Select **Start / restart visual pitch drill**. This stops lesson playback
+   and other training tools, pauses chord checks, and blocks mapped inputs.
+6. Mute until **READY**, then pick the **NEXT** note. Mute again after every
+   scored attempt, even when the next note has a different pitch.
+
+Feedback includes labels as well as colors:
+
+- **Green / correct:** the expected pitch and octave matched within your
+  configured cents tolerance. The drill advances one target.
+- **Red / wrong:** a clear event had the wrong pitch, octave, or tuning offset.
+  The drill stays on that target for a retry.
+- **Amber / uncertain:** input was unclear, clipped, stale, or interrupted.
+  Uncertain events do not count as mistakes.
+
+**Skip expected note** explicitly marks a target as unplayed. Silence is not
+automatically treated as a missed note. Capture stops, dropped data, or a
+1.5-second processing stall stop the drill without adding mistakes. Repeated
+pitches cannot be distinguished from one ringing note without muting.
+String/fret annotations are guides, not proof of the physical string played.
+
+The display shows resolved targets, wrong-pitch retries, explicit skips, and
+unresolved targets. Pitch-attempt accuracy is matched events divided by
+matched plus wrong events; it excludes skips and includes retries. Uncertain
+counts are processed frames, not missed picks. Run results remain on screen
+until restart and are not saved as practice history or marked as lesson
+completion. Closing the window, playing lesson audio, or starting another tool
+stops the drill.
+
+### Local pitch-data format
+
+Pitch data is a small JSON file you provide on each PC. No course transcription
+is bundled in GitHub releases. Use the following independent three-note example
+as a format reference, not as Guitar Aerobics lesson content:
+
+```json
+{
+  "schemaVersion": 1,
+  "exercise": 1,
+  "title": "Three-note pitch check",
+  "source": "Personal practice targets",
+  "notes": [
+    { "midi": 69 },
+    { "midi": 69 },
+    { "midi": 71 }
+  ]
+}
+```
+
+Save it with a `.notes.json` extension. MIDI values use sounding pitches
+(open high E is E4, MIDI 64), not octave-transposed guitar notation. Each file
+supports 1–512 notes, MIDI values 40–87, and a maximum size of 256 KiB. The title
+is limited to 200 characters and the source description to 500. Optional
+`string` and `fret` values must appear together and agree with standard tuning:
+string 1 is high E, string 6 is low E, and frets range from 0 to 24.
+
+The plugin reads these files but never modifies them. Note files and their
+locations are not included in diagnostic snapshots or automatic export
+attachments. Opt-in detection logs can still contain detected pitches and
+exercise/index feedback.
 
 ## Prepare for manual testing
 
@@ -450,7 +531,8 @@ calibration, labelled trials, rhythm scores/click synthesis, and history
 persistence/recommendations, mapping validation, binding persistence, preview
 routing, note selection, audio-health states, manual checklists, settings
 recovery, reviewed diagnostic archives, local lesson discovery/progress, and
-sample-frame-aligned seeking and A-B looping. CI runs these
+sample-frame-aligned seeking and A-B looping, local pitch-sequence validation,
+and mute-separated pitch grading through the YIN detector. CI runs these
 checks before building and publishing the plugin with its NAudio dependencies.
 Real guitar hardware and the in-game UI still require manual testing.
 

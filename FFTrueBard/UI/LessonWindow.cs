@@ -38,6 +38,7 @@ public sealed partial class ConfigWindow
         lessonPdf = config.LessonPdf ?? "";
         lessonExercises = config.LessonExercisesFolder ?? "";
         lessonRhythm = config.LessonRhythmFolder ?? "";
+        sequencePath = config.LessonSequenceFile ?? "";
         config.LessonExercise = Math.Clamp(config.LessonExercise, 1, 365);
         lessonPlayer.Volume = float.IsFinite(config.LessonVolume) ? Math.Clamp(config.LessonVolume, 0, 1) : 0.25f;
         ReadLessonEntry();
@@ -45,9 +46,13 @@ public sealed partial class ConfigWindow
 
     private void ReadLessonEntry()
     {
+        lessonPitch.Stop("Exercise changed. Review the selected pitch data and restart.");
+        pitchSequence = null;
+        sequenceReviewed = false;
         var entry = lessonProgress.Get(config.LessonExercise);
         lessonNotes = entry.Notes;
         lessonCompleted = entry.Completed;
+        if (lessonLibrary is not null) LoadPitchSequence();
     }
 
     private void ScanLessons(bool persist)
@@ -94,6 +99,7 @@ public sealed partial class ConfigWindow
                 }
             }
             lessonLibrary = library;
+            LoadPitchSequence();
             lessonStatus = $"{(saveLessonPaths ? "Saved locations. " : "")}{library.Exercises.Count} exercise/tuning tracks; {library.Rhythm.Count} rhythm tracks. Files remain in place.";
         }
         catch (Exception e) { lessonStatus = $"Could not load lesson locations: {e.Message}"; }
@@ -162,7 +168,7 @@ public sealed partial class ConfigWindow
     private void DrawLessonProgress()
     {
         var exercise = config.LessonExercise;
-        ImGui.BeginDisabled(LessonDirty);
+        ImGui.BeginDisabled(LessonDirty || lessonPitch.Running || loadingSequence is not null);
         if (ImGui.SliderInt("Exercise / day", ref exercise, 1, 365))
         {
             config.LessonExercise = exercise;
@@ -188,7 +194,7 @@ public sealed partial class ConfigWindow
         if (ImGui.Button("Discard unsaved lesson edits")) ReadLessonEntry();
         if (LessonDirty) ImGui.TextWrapped("Unsaved edits: save or discard before changing the exercise. Closing/reloading does not save these edits.");
         ImGui.TextWrapped($"Completed: {lessonProgress.Completed}/365. {lessonProgress.Status}");
-        ImGui.TextWrapped("This is a local book companion, not automatic exercise grading. The PDF opens in your Windows PDF viewer; page numbers and notation are not imported.");
+        ImGui.TextWrapped("Completion is self-reported. Optional visual pitch checks below require a reviewed local sequence; rhythm and technique are not graded. The PDF opens in your external viewer.");
     }
 
     private void DrawLessonTracks()
@@ -277,7 +283,9 @@ public sealed partial class ConfigWindow
     {
         if (!lessonScanRequested) ScanLessons(false);
         if (ImGui.CollapsingHeader("Local lesson locations", ImGuiTreeNodeFlags.DefaultOpen)) DrawLessonLocations();
-        DrawLessonProgress();
+        DrawLessonPitch();
+        if (ImGui.CollapsingHeader("Lesson selection and self-reported progress", ImGuiTreeNodeFlags.DefaultOpen))
+            DrawLessonProgress();
         DrawLessonTracks();
         DrawLessonPlayback();
     }

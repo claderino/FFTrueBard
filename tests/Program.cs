@@ -4,7 +4,7 @@ using FFTrueBard.Diagnostics;
 using FFTrueBard.Input;
 using FFTrueBard.Practice;
 
-// Dependency-free regression runner: no game installation or audio hardware required.
+// Regression runner: no game installation or audio hardware required.
 var checks = 0;
 void Check(bool condition, string name)
 {
@@ -561,3 +561,5 @@ finally
 Console.WriteLine($"PASS: {checks} total checks, including audio health, checklist, recovery, and reviewed diagnostic export.");
 LessonTests.Run(Check);
 Console.WriteLine($"PASS: {checks} total checks, including lesson discovery, progress, seeking, and A-B audio looping.");
+LessonPitchTests.Run(Check);
+Console.WriteLine($"PASS: {checks} total checks, including local pitch sequences and visual pitch-order grading.");

@@ -60,6 +60,7 @@ public sealed partial class ConfigWindow : IDisposable
     public void Receive(DetectionFrame frame)
     {
         latest = frame;
+        ReceiveLessonPitch(frame);
         checklist.Observe(frame);
         ReceiveMappingNote(frame);
         tuner.Receive(frame, tunerString);
