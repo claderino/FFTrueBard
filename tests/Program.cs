@@ -4,6 +4,14 @@ using FFTrueBard.Diagnostics;
 using FFTrueBard.Input;
 using FFTrueBard.Practice;
 
+if (args.Length > 0 && args[0] == "--reference-audio")
+{
+    if (args.Length != 3)
+        throw new ArgumentException("Usage: --reference-audio <absolute .reference.json case> <new absolute output directory>");
+    ReferenceAudioEvaluation.RunCase(args[1], args[2]);
+    return;
+}
+
 // Regression runner: no game installation or audio hardware required.
 var checks = 0;
 void Check(bool condition, string name)
@@ -565,3 +573,5 @@ LessonPitchTests.Run(Check);
 Console.WriteLine($"PASS: {checks} total checks, including local pitch sequences and visual pitch-order grading.");
 LessonCatalogTests.Run(Check);
 Console.WriteLine($"PASS: {checks} total checks, including guided exercise catalogs, references, and audio cues.");
+ReferenceEvaluationTests.Run(Check);
+Console.WriteLine($"PASS: {checks} total checks, including independent reference-audio scoring and native-channel replay.");

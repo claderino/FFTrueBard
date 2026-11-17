@@ -650,7 +650,8 @@ routing, note selection, audio-health states, manual checklists, settings
 recovery, reviewed diagnostic archives, local lesson discovery/progress, and
 sample-frame-aligned seeking and A-B looping, local pitch-sequence validation,
 mute-separated pitch grading through the YIN detector, guided-catalog
-validation/filtering, and catalog cue/reference resolution. CI runs these
+validation/filtering, catalog cue/reference resolution, independent reference
+scoring, and native-channel replay of generated audio. CI runs these
 checks before building and publishing the plugin with its NAudio dependencies.
 Real guitar hardware and the in-game UI still require manual testing.
 
@@ -658,6 +659,98 @@ For an optional read-only decode check against your own lesson files, set
 `FFTRUEBARD_LESSON_TEST_ROOT` to the local course root before running the tests.
 This opens each discovered MP3 without playing it or copying its contents into
 the repository. Normal CI does not require or include course materials.
+
+### Measure the detector against reference recordings
+
+The test runner can replay a local exercise recording through the actual
+`PitchProcessor` and YIN estimator. This is a measurement mode, separate from
+the regression suite and the in-game lesson drill. It does not change detector
+settings in the plugin or declare the hardware ready.
+
+For a meaningful reference case, independently review both the note sequence
+and the recording's timing. A PDF cue can include a spoken introduction or
+count-in. Notes printed on a page do not establish their exact onset times in
+an MP3. Do not use the detector's own predictions to create its expected labels.
+Avoid treating polyphonic rhythm backing tracks as single-note ground truth.
+
+Save a local `.reference.json` file. The following shows its structure using
+independent three-note practice targets; replace the paths and independently
+check the timing intervals before setting `timingsReviewed`:
+
+```json
+{
+  "schemaVersion": 1,
+  "title": "Personal phrase reference",
+  "audioFile": "C:\\Practice\\personal-recording.wav",
+  "sequenceFile": "C:\\Practice\\personal.notes.json",
+  "exercise": 1,
+  "channels": [1],
+  "analysisEndSeconds": 2.5,
+  "timingsReviewed": true,
+  "timingSource": "Notation and independent recording review",
+  "timingUncertaintyMs": 20,
+  "attackGuardMs": 40,
+  "releaseGuardMs": 30,
+  "pitchToleranceCents": 35,
+  "timings": [
+    { "startSeconds": 0.5, "endSeconds": 1.0 },
+    { "startSeconds": 1.0, "endSeconds": 1.5 },
+    { "startSeconds": 1.5, "endSeconds": 2.0 }
+  ]
+}
+```
+
+The existing `.notes.json` sequence supplies expected MIDI pitches in order.
+There must be exactly one timing interval per note, including every repeated
+note. Intervals are non-overlapping and measured in seconds from the start
+of the source file. Gaps and unlabelled material are not note ground truth.
+Guard margins must be at least as large as the declared timing uncertainty.
+Labels can be approximate; the report does not claim exact pick-onset timing.
+
+Run the measurement with absolute local paths and a new output directory:
+
+```powershell
+dotnet run --project tests/FFTrueBard.Tests.csproj -c Release -- `
+  --reference-audio "C:\Practice\phrase.reference.json" `
+  "C:\Practice\reference-results-001"
+```
+
+Input can be MP3 or WAV. Channels are one-based and processed separately at
+the native rate, without stereo averaging, normalisation, or resampling.
+The frame-size calculation matches the current capture worker. Audio before
+the first label is processed as context, but is not counted as a guitar note.
+Incomplete trailing frames are not padded. This bypasses WASAPI capture and
+real-time scheduling, so it cannot verify USB delivery, device routing, or
+in-game responsiveness.
+
+The optional `settings` object captures `threshold`, `rmsGate`, `stableFrames`,
+`retriggerMs`, and `releaseMs`. Omitted settings use the plugin's original
+defaults: `0.15`, `0.004`, `2`, `150`, and `100`. The runner does not read the
+user's current Dalamud configuration. Reports include those settings, source
+file hashes, and the compiled runner hash for later comparisons.
+
+The local output contains `report.json` and one pitch-frame CSV per selected
+channel. No audio is copied or uploaded. An existing nonempty output directory
+is refused, preserving prior evidence. The report separates:
+
+- **Steady pitch:** only complete frames inside the guarded note interiors
+  are scored. Correct MIDI, cents tolerance, octave errors, unvoiced frames,
+  invalid samples, clipping, and excluded frames remain visible.
+- **Pitch coverage:** correct frames divided by all eligible steady frames.
+  Accuracy among voiced frames alone can look perfect while the detector
+  returns no pitch for parts of the recording.
+- **Accepted-event note coverage:** expected notes with at least one
+  correct, usable `accepted` event during their labelled interval. A ringing
+  pitch is not evidence that each repeated pick was recognized. Duplicate
+  events cannot recover a note more than once.
+
+This mode prints a baseline, not a passing certification. The normal CI checks
+that the scorer handles known correct and incorrect generated audio; it does
+not assert that a proprietary reference recording achieves a target accuracy.
+Keep recordings, note data, and `.reference.json` annotations local. A baseline
+from one processed studio recording is useful evidence, not proof of accurate
+detection on other exercises or on a dry NUX input. Hold out additional
+reviewed recordings when tuning the detector to avoid fitting one exercise.
 
 ## Limitations
 

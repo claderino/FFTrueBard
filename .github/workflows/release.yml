@@ -22,8 +22,8 @@ jobs:
       - name: Keep user lesson media out of published source
         shell: pwsh
         run: |
-          $media = git ls-files | Where-Object { $_ -match '(?i)(\.(mp3|pdf)$|\.(notes|course)\.json$)' }
-          if ($media) { throw 'User lesson PDFs, MP3s, course catalogs, and note transcriptions must not be committed or published.' }
+          $media = git ls-files | Where-Object { $_ -match '(?i)(\.(mp3|wav|pdf)$|\.(notes|course|reference)\.json$)' }
+          if ($media) { throw 'User lesson media, course catalogs, reference annotations, and note transcriptions must not be committed or published.' }
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
