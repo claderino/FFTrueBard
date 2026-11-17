@@ -563,3 +563,5 @@ LessonTests.Run(Check);
 Console.WriteLine($"PASS: {checks} total checks, including lesson discovery, progress, seeking, and A-B audio looping.");
 LessonPitchTests.Run(Check);
 Console.WriteLine($"PASS: {checks} total checks, including local pitch sequences and visual pitch-order grading.");
+LessonCatalogTests.Run(Check);
+Console.WriteLine($"PASS: {checks} total checks, including guided exercise catalogs, references, and audio cues.");

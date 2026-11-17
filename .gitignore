@@ -17,3 +17,4 @@ venv/
 *.mp3
 *.pdf
 *.notes.json
+*.course.json

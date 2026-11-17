@@ -86,9 +86,10 @@ clean guitar capture channel so the detector does not hear the backing track.
    To disable a loop, clear the checkbox and apply again.
 
 Loading does not start playback automatically. Weekly tracks contain several
-exercises: set the individual exercise boundaries yourself. No timestamps,
-PDF page links, notation extraction, speed changes, or playback-synchronized
-grading are provided. Loop boundaries operate on decoded audio frames; seeking
+exercises: use an authored local lesson card's cue or set the boundaries
+yourself. No automatic timestamp extraction, PDF page jumps, notation
+extraction, speed changes, or playback-synchronized grading are provided.
+Loop boundaries operate on decoded audio frames; seeking
 and boundary changes can take about one output buffer to become audible.
 
 Lesson playback pauses chord grading and blocks mapped inputs. Closing the
@@ -111,6 +112,120 @@ previous saved version is retained as `lesson-progress.json.bak`. They do not
 automatically sync between PCs. Each exercise supports up to 2,000 characters
 of notes. A marked completion does not mean the detector verified the exercise.
 
+### Follow guided exercise cards
+
+The exercise framework reads a local catalog containing lesson steps,
+self-checks, PDF references, optional audio cues, and optional pitch-data
+references. Adding more cards does not require a plugin update. The plugin
+does not automatically turn the PDF into tutorials or claim that every
+exercise has been implemented.
+
+To use a catalog:
+
+1. Save your authored `exercises.course.json` in `fftruebard-lessons` under
+   the saved lesson root, or beside the PDF when no root is set.
+2. Open **Lessons** and select **Save locations and scan**. Alternatively,
+   expand **Catalog file and filters**, browse to another local `.course.json`
+   file, and select **Save catalog location and reload**. Reload after
+   editing the file.
+3. Select **Catalog exercise**, or use **Previous exercise** and **Next
+   exercise**. Week and technique filters narrow the authored cards listed
+   in the catalog dropdown. The existing exercise/day control still accesses
+   all exercise numbers from 1 to 365.
+4. Expand **Guided lesson card**. Use its PDF reference to find the exercise
+   manually in your external viewer; **Open book for this exercise** opens
+   the configured PDF but does not jump to a page.
+5. Select **Prepare guided practice (no grading)** to pause other training
+   tools and chord scoring. Follow the steps and tick the self-checks based on
+   your observations. Capture does not need to be running for manual practice.
+6. Save useful observations in your personal notes and choose whether to mark
+   the exercise complete. Step position and self-check ticks are not saved;
+   they reset on exercise selection, note discard, or catalog reload.
+
+Missing cards are explicitly **PDF-only**, not completed tutorials. A
+`guided` card disables pitch grading, even if a standalone note-file override
+is set. This supports bending, legato, ringing arpeggios, strummed chords,
+and other exercises without pretending to assess their technique. A
+`pitch-order` card can offer the existing slow, mute-separated pitch pilot
+after you review its note data. This label does not certify technique
+detection or enable rhythm grading.
+
+For cards with audio cues, select **Load exercise audio cue (no autoplay)**.
+After decoding, the player seeks to the cue start and fills the A/B controls
+without enabling a loop. Press **Play lesson audio** to listen, and explicitly
+enable/apply the loop if wanted. Playback continues beyond the suggested B
+point unless looping is enabled or you stop it. **Stop audio** returns to
+the track start; reload the cue to jump back to the exercise.
+
+Cue ranges are checked against the decoded track duration. Out-of-range
+values are rejected, not silently clamped. Book timestamps can be approximate;
+listen and adjust them locally. Loading a cue never starts playback or
+changes detector settings.
+
+### Local catalog format
+
+Catalogs are declarative data, not scripts. The following independent card
+illustrates the format without including any Guitar Aerobics lesson content:
+
+```json
+{
+  "schemaVersion": 1,
+  "title": "Personal guitar course",
+  "source": "My practice plan",
+  "exercises": [
+    {
+      "exercise": 1,
+      "title": "Controlled picking",
+      "technique": "Picking",
+      "steps": [
+        "Read the chosen phrase in my notation.",
+        "Listen, then practise slowly."
+      ],
+      "selfChecks": ["The intended strings sound cleanly."],
+      "pdfPage": 5,
+      "printedPage": "4",
+      "minBpm": 40,
+      "maxBpm": 80,
+      "mode": "guided",
+      "audio": { "track": "my-weekly-audio.mp3", "startSeconds": 2, "endSeconds": 8 }
+    }
+  ]
+}
+```
+
+The schema accepts 1–365 cards with unique exercise numbers in the range
+1–365. The catalog is limited to 2 MiB, its title to 200 characters, and its
+source description to 500. Each card requires a title (up to 200 characters),
+a technique label (100), and 1–20 nonempty steps (1,000 characters each).
+Self-checks are optional, with up to 20 entries of 500 characters each.
+
+PDF page numbers are one-based metadata, not validated against the PDF.
+`printedPage` can contain a label such as a Roman numeral. Tempo references
+must supply both `minBpm` and `maxBpm`, in ascending order from 20 to 400.
+`rhythmGuide` is optional text of up to 300 characters. None of these fields
+changes playback speed or scores musical timing.
+
+`mode` defaults to `guided`. To offer pitch checking, use `pitch-order` and
+optionally name a `pitchSequenceFile`, such as `personal-phrase.notes.json`.
+Otherwise the card uses `exercise-NNN.notes.json`. Card note references resolve
+beside the catalog; a saved absolute pitch-file override still takes precedence.
+Note-file exercise IDs must match the selected card. Pitch files are reviewed
+separately before a drill can start.
+
+The optional `audio` object references a direct MP3 filename in the scanned
+exercise-audio folder. An empty `track` selects the unique weekly track covering
+the exercise number. `startSeconds` is required; `endSeconds` can be omitted
+to use the actual track end. Missing or ambiguous tracks are reported. File
+references cannot include directory traversal, absolute paths, URLs, or
+alternate data streams.
+
+Catalogs, course-derived instructions, note transcriptions, and media stay
+outside the public repository and release assets. Catalog locations and
+contents are excluded from diagnostic snapshots and automatic attachments.
+The plugin reads but never edits the catalog. Personal progress remains
+keyed by exercise number, not by catalog: switching catalogs does not create
+a separate progress history. This release does not change note detection.
+
 ### Check pitch order visually
 
 The **Visual pitch-order drill** checks one note at a time against a local,
@@ -124,10 +239,12 @@ To start a drill:
 2. In **Lessons**, choose the exercise under **Lesson selection and
    self-reported progress**.
 3. Expand **Pitch targets and setup**. Leave **Pitch-sequence file override**
-   blank to discover `fftruebard-lessons/exercise-NNN.notes.json` under the
-   saved lesson root. With only a PDF location set, discovery uses a sibling
-   `fftruebard-lessons` folder. Alternatively, browse to a local `.notes.json`
-   file and select **Save sequence location and load**.
+   blank to use a pitch-enabled catalog card's note file. Without a card,
+   discovery uses `fftruebard-lessons/exercise-NNN.notes.json` under the saved
+   lesson root (or beside the PDF when only a PDF location is set).
+   Alternatively, browse to a local `.notes.json` file and select
+   **Save sequence location and load**. Guided-only cards do not offer this
+   pitch drill.
 4. Expand **Review expected sequence** and compare the targets with your
    lesson. Check **I reviewed these targets against my lesson**. An exercise
    number mismatch prevents loading; arbitrary local files are not certified
@@ -532,7 +649,8 @@ persistence/recommendations, mapping validation, binding persistence, preview
 routing, note selection, audio-health states, manual checklists, settings
 recovery, reviewed diagnostic archives, local lesson discovery/progress, and
 sample-frame-aligned seeking and A-B looping, local pitch-sequence validation,
-and mute-separated pitch grading through the YIN detector. CI runs these
+mute-separated pitch grading through the YIN detector, guided-catalog
+validation/filtering, and catalog cue/reference resolution. CI runs these
 checks before building and publishing the plugin with its NAudio dependencies.
 Real guitar hardware and the in-game UI still require manual testing.
 

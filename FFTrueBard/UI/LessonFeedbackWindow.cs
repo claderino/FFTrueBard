@@ -16,19 +16,31 @@ public sealed partial class ConfigWindow
     private int loadingSequenceExercise;
     private long pitchAudioDrops;
     private long pitchFrameDrops;
+    private int sequenceRequest;
+    private int loadingSequenceRequest;
+    private bool reloadPitchSequence;
 
     private void LoadPitchSequence()
     {
-        if (loadingSequence is not null) return;
         lessonPitch.Stop("Pitch sequence changed. Review it, then restart grading.");
         pitchSequence = null;
         sequenceReviewed = false;
+        sequenceRequest++;
+        if (loadingSequence is not null) { reloadPitchSequence = true; return; }
+        if (SelectedCatalogExercise?.Mode == "guided")
+        {
+            sequenceStatus = "This card is guided/self-assessed. Pitch grading is not enabled for its technique.";
+            return;
+        }
         try
         {
             var root = lessonLibrary?.Paths.Root ?? config.LessonRoot;
             var pdf = lessonLibrary?.Paths.Pdf ?? config.LessonPdf;
             var path = string.IsNullOrWhiteSpace(sequencePath)
-                ? LessonSequence.DefaultPath(root, pdf, config.LessonExercise) : LessonLibrary.Normalize(sequencePath);
+                ? SelectedCatalogExercise?.Mode == "pitch-order"
+                    ? SelectedCatalogExercise.SequencePath(loadedCatalogPath)
+                    : LessonSequence.DefaultPath(root, pdf, config.LessonExercise)
+                : LessonLibrary.Normalize(sequencePath);
             loadingSequenceExercise = config.LessonExercise;
             if (!File.Exists(path))
             {
@@ -37,6 +49,7 @@ public sealed partial class ConfigWindow
                 return;
             }
             var exercise = loadingSequenceExercise;
+            loadingSequenceRequest = sequenceRequest;
             loadingSequence = Task.Run(() => LessonSequence.Load(path, exercise));
             sequenceStatus = "Loading local pitch sequence...";
         }
@@ -50,7 +63,7 @@ public sealed partial class ConfigWindow
             try
             {
                 var loaded = loadingSequence.GetAwaiter().GetResult();
-                if (loadingSequenceExercise == config.LessonExercise)
+                if (loadingSequenceExercise == config.LessonExercise && loadingSequenceRequest == sequenceRequest)
                 {
                     pitchSequence = loaded;
                     sequenceStatus = $"Loaded {loaded.Notes.Length} pitch targets for exercise {loaded.Exercise}. Review before starting.";
@@ -58,6 +71,7 @@ public sealed partial class ConfigWindow
             }
             catch (Exception e) { sequenceStatus = $"Cannot load pitch data: {e.Message}"; }
             loadingSequence = null;
+            if (reloadPitchSequence) { reloadPitchSequence = false; LoadPitchSequence(); }
         }
         CheckLessonCapture();
         lessonPitch.Tick(Now);
@@ -78,13 +92,18 @@ public sealed partial class ConfigWindow
 
     private void DrawLessonPitch()
     {
+        if (SelectedCatalogExercise?.Mode == "guided")
+        {
+            ImGui.TextWrapped("Pitch grading is disabled for this guided card. Use its steps and self-checks instead.");
+            return;
+        }
         ImGui.Separator();
         ImGui.TextUnformatted("Visual pitch-order drill (slow, mute-separated pilot)");
         ImGui.TextWrapped("Pick ONE note, mute all strings until Ready, then pick again. Repeated pitches require a mute. This does not follow the MP3 clock or grade sixteenth-note speed, picking direction, rhythm, or fingering.");
         DrawLessonPitchFeedback();
         if (!ImGui.CollapsingHeader("Pitch targets and setup", pitchSequence is null ? ImGuiTreeNodeFlags.DefaultOpen : ImGuiTreeNodeFlags.None))
             return;
-        ImGui.BeginDisabled(lessonPitch.Running || loadingSequence is not null);
+        ImGui.BeginDisabled(lessonPitch.Running || loadingSequence is not null || loadingCatalog is not null || scanningLessons is not null);
         if (ImGui.InputText("Pitch-sequence file override", ref sequencePath, 2048))
         {
             pitchSequence = null;
@@ -98,7 +117,7 @@ public sealed partial class ConfigWindow
                 sequencePath = path;
                 LoadPitchSequence();
             });
-        ImGui.TextWrapped("Leave blank to discover fftruebard-lessons/exercise-NNN.notes.json under the saved lesson root (or beside the PDF when no root is set). Files stay local.");
+        ImGui.TextWrapped("Leave blank to use the selected catalog card's note file, or discover fftruebard-lessons/exercise-NNN.notes.json under the saved root when no card exists. Files stay local.");
         if (ImGui.Button("Save sequence location and load"))
         {
             try
@@ -138,7 +157,7 @@ public sealed partial class ConfigWindow
                 save();
             }
             ImGui.EndDisabled();
-            ImGui.BeginDisabled(!sequenceReviewed || !detector.IsCapturing || loadingSequence is not null);
+            ImGui.BeginDisabled(!sequenceReviewed || !detector.IsCapturing || loadingSequence is not null || loadingCatalog is not null || scanningLessons is not null);
             if (ImGui.Button("Start / restart visual pitch drill"))
             {
                 EnterTool(); // Stops lesson audio, other tools, and the preceding run.

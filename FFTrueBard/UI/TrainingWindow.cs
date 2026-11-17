@@ -34,6 +34,7 @@ public sealed partial class ConfigWindow
     public void Update()
     {
         UpdateLessons();
+        UpdateLessonCatalog();
         UpdateLessonPitch();
         UpdateSupport();
         mappingCapture.Tick(Now);
@@ -85,6 +86,7 @@ public sealed partial class ConfigWindow
 
     private void StopTools()
     {
+        queuedLessonCue = null;
         lessonPlayer.Stop();
         lessonDialogs.Reset();
         mappingCapture.Cancel();

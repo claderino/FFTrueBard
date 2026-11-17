@@ -39,6 +39,7 @@ public sealed partial class ConfigWindow
         lessonExercises = config.LessonExercisesFolder ?? "";
         lessonRhythm = config.LessonRhythmFolder ?? "";
         sequencePath = config.LessonSequenceFile ?? "";
+        catalogPath = config.LessonCatalogFile ?? "";
         config.LessonExercise = Math.Clamp(config.LessonExercise, 1, 365);
         lessonPlayer.Volume = float.IsFinite(config.LessonVolume) ? Math.Clamp(config.LessonVolume, 0, 1) : 0.25f;
         ReadLessonEntry();
@@ -52,6 +53,7 @@ public sealed partial class ConfigWindow
         var entry = lessonProgress.Get(config.LessonExercise);
         lessonNotes = entry.Notes;
         lessonCompleted = entry.Completed;
+        ResetLessonGuide();
         if (lessonLibrary is not null) LoadPitchSequence();
     }
 
@@ -75,6 +77,21 @@ public sealed partial class ConfigWindow
             loopB = (float)lessonPlayer.Duration;
             lessonLoop = false;
             initialiseLoop = false;
+            if (queuedLessonCue is { } cue && lessonPlayer.Ready)
+            {
+                try
+                {
+                    var (start, end) = cue.Within(lessonPlayer.Duration);
+                    if (!lessonPlayer.SetLoop(start, end, false))
+                        throw new InvalidDataException("The cue cannot be represented as an audio range.");
+                    lessonPlayer.Seek(start);
+                    loopA = (float)start;
+                    loopB = (float)end;
+                    catalogStatus = "Exercise cue loaded without playback. Press Play; enable/apply A-B looping if wanted.";
+                }
+                catch (Exception e) { catalogStatus = $"Cue not applied: {e.Message}"; }
+            }
+            queuedLessonCue = null;
         }
         if (scanningLessons?.IsCompleted != true) return;
         try
@@ -99,7 +116,7 @@ public sealed partial class ConfigWindow
                 }
             }
             lessonLibrary = library;
-            LoadPitchSequence();
+            LoadLessonCatalog();
             lessonStatus = $"{(saveLessonPaths ? "Saved locations. " : "")}{library.Exercises.Count} exercise/tuning tracks; {library.Rhythm.Count} rhythm tracks. Files remain in place.";
         }
         catch (Exception e) { lessonStatus = $"Could not load lesson locations: {e.Message}"; }
@@ -117,7 +134,7 @@ public sealed partial class ConfigWindow
     private void DrawLessonLocations()
     {
         ImGui.TextWrapped("Use your own local book and MP3 files. Nothing is downloaded, copied into the plugin, or uploaded. Each PC has its own saved paths.");
-        ImGui.BeginDisabled(scanningLessons is not null);
+        ImGui.BeginDisabled(scanningLessons is not null || loadingCatalog is not null || loadingSequence is not null);
         LessonFolderField("Lesson root folder", ref lessonRoot, p => lessonRoot = p);
         ImGui.TextWrapped("For Guitar Aerobics, select the folder containing the PDF and both audio folders. Blank overrides below use automatic discovery.");
         if (ImGui.TreeNode("Individual locations / overrides"))
@@ -133,7 +150,7 @@ public sealed partial class ConfigWindow
         }
         if (ImGui.Button("Save locations and scan"))
         {
-            lessonPlayer.Stop();
+            StopTools();
             ScanLessons(true);
         }
         ImGui.EndDisabled();
@@ -142,25 +159,29 @@ public sealed partial class ConfigWindow
         foreach (var warning in lessonLibrary.Warnings) ImGui.TextWrapped(warning);
         ImGui.TextWrapped($"Resolved PDF: {lessonLibrary.Paths.Pdf}");
         ImGui.TextWrapped($"Exercises: {lessonLibrary.Paths.Exercises}\nRhythm: {lessonLibrary.Paths.Rhythm}");
-        if (ImGui.Button("Open local lesson PDF (external viewer)"))
-        {
-            try
-            {
-                var path = LessonLibrary.Normalize(lessonLibrary.Paths.Pdf);
-                if (!File.Exists(path) || !Path.GetExtension(path).Equals(".pdf", StringComparison.OrdinalIgnoreCase))
-                    throw new FileNotFoundException("Select an existing local PDF first.");
-                Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true });
-            }
-            catch (Exception e) { lessonStatus = $"Could not open PDF: {e.Message}"; }
-        }
+        if (ImGui.Button("Open local lesson PDF (external viewer)")) OpenLessonPdf();
     }
 
-    private void LoadLessonTrack(LessonTrack track)
+    private void OpenLessonPdf()
     {
+        try
+        {
+            var path = LessonLibrary.Normalize(lessonLibrary?.Paths.Pdf ?? config.LessonPdf);
+            if (!File.Exists(path) || !Path.GetExtension(path).Equals(".pdf", StringComparison.OrdinalIgnoreCase))
+                throw new FileNotFoundException("Select an existing local PDF first.");
+            Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true });
+        }
+        catch (Exception e) { lessonStatus = $"Could not open PDF: {e.Message}"; }
+    }
+
+    private void LoadLessonTrack(LessonTrack track, LessonAudioCue? cue = null)
+    {
+        if (lessonPlayer.Loading) return;
         StopTools();
         config.PracticeMode = true;
         trainingPaused = true;
         lessonPlayer.Load(track.Path);
+        queuedLessonCue = cue;
         initialiseLoop = true;
         save();
     }
@@ -168,21 +189,17 @@ public sealed partial class ConfigWindow
     private void DrawLessonProgress()
     {
         var exercise = config.LessonExercise;
-        ImGui.BeginDisabled(LessonDirty || lessonPitch.Running || loadingSequence is not null);
+        ImGui.BeginDisabled(LessonNavigationBlocked);
         if (ImGui.SliderInt("Exercise / day", ref exercise, 1, 365))
         {
-            config.LessonExercise = exercise;
-            ReadLessonEntry();
-            save();
+            SelectLessonExercise(exercise);
         }
         if (ImGui.BeginCombo("Week", $"Week {Math.Min(52, (exercise - 1) / 7 + 1)}"))
         {
             for (var week = 1; week <= 52; week++)
                 if (ImGui.Selectable($"Week {week}", week == Math.Min(52, (exercise - 1) / 7 + 1)))
                 {
-                    config.LessonExercise = (week - 1) * 7 + 1;
-                    ReadLessonEntry();
-                    save();
+                    SelectLessonExercise((week - 1) * 7 + 1);
                 }
             ImGui.EndCombo();
         }
@@ -206,7 +223,7 @@ public sealed partial class ConfigWindow
         {
             ImGui.TextWrapped($"Exercise {config.LessonExercise}: {weekTrack.Title}");
             if (ImGui.Button("Load selected week's exercise track")) LoadLessonTrack(weekTrack);
-            ImGui.TextDisabled("Weekly audio includes several exercises. Seek and set A/B manually; no automatic per-exercise timestamps.");
+            ImGui.TextWrapped("Weekly audio includes several exercises. Use a local card's cue if available; otherwise seek and set A/B manually.");
         }
         if (ImGui.TreeNode("All exercise / tuning tracks"))
         {
@@ -283,6 +300,7 @@ public sealed partial class ConfigWindow
     {
         if (!lessonScanRequested) ScanLessons(false);
         if (ImGui.CollapsingHeader("Local lesson locations", ImGuiTreeNodeFlags.DefaultOpen)) DrawLessonLocations();
+        DrawLessonCatalog();
         DrawLessonPitch();
         if (ImGui.CollapsingHeader("Lesson selection and self-reported progress", ImGuiTreeNodeFlags.DefaultOpen))
             DrawLessonProgress();

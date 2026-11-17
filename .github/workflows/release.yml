@@ -22,8 +22,8 @@ jobs:
       - name: Keep user lesson media out of published source
         shell: pwsh
         run: |
-          $media = git ls-files | Where-Object { $_ -match '(?i)(\.(mp3|pdf)$|\.notes\.json$)' }
-          if ($media) { throw 'User lesson PDFs, MP3s, and note transcriptions must not be committed or published.' }
+          $media = git ls-files | Where-Object { $_ -match '(?i)(\.(mp3|pdf)$|\.(notes|course)\.json$)' }
+          if ($media) { throw 'User lesson PDFs, MP3s, course catalogs, and note transcriptions must not be committed or published.' }
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -57,7 +57,7 @@ jobs:
               Author              = 'claderino'
               Name                = 'FFTrueBard'
               Punchline           = 'Play Final Fantasy XIV with an electric guitar.'
-              Description         = 'Guitar practice, local MP3 playback/looping, and visual pitch-order drills from your own reviewed note files. Includes progress and diagnostics. Bring your own lesson files. Game input injection is not implemented.'
+              Description         = 'Local guided exercise catalogs with lesson steps, self-checks, PDF references, MP3 cues/loops, and optional reviewed pitch-order drills. Bring your own lesson files. Game input injection is not implemented.'
               InternalName        = 'FFTrueBard'
               AssemblyVersion     = $env:VER
               RepoUrl             = "https://github.com/$env:REPO"
@@ -83,7 +83,7 @@ jobs:
             Author                  = 'claderino'
             Name                    = 'FFTrueBard'
             Punchline               = 'Play Final Fantasy XIV with an electric guitar.'
-            Description             = 'Guitar practice, local MP3 playback/looping, and visual pitch-order drills from your own reviewed note files. Includes progress and diagnostics. Bring your own lesson files. Game input injection is not implemented.'
+            Description             = 'Local guided exercise catalogs with lesson steps, self-checks, PDF references, MP3 cues/loops, and optional reviewed pitch-order drills. Bring your own lesson files. Game input injection is not implemented.'
             InternalName            = 'FFTrueBard'
             AssemblyVersion         = $env:VER
             TestingAssemblyVersion  = $env:VER
