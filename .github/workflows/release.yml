@@ -51,7 +51,7 @@ jobs:
               Author              = 'claderino'
               Name                = 'FFTrueBard'
               Punchline           = 'Play Final Fantasy XIV with an electric guitar.'
-              Description         = 'Guitar practice tools, an in-game note-to-key/mouse mapping editor, and local diagnostics. Saved bindings support modifier combinations and log-only previews. Game input injection is not implemented.'
+              Description         = 'Guitar practice tools and mapping editor, with audio health, guided manual tests, reviewed diagnostic exports, and settings recovery. Game input injection is not implemented.'
               InternalName        = 'FFTrueBard'
               AssemblyVersion     = $env:VER
               RepoUrl             = "https://github.com/$env:REPO"
@@ -77,7 +77,7 @@ jobs:
             Author                  = 'claderino'
             Name                    = 'FFTrueBard'
             Punchline               = 'Play Final Fantasy XIV with an electric guitar.'
-            Description             = 'Guitar practice tools, an in-game note-to-key/mouse mapping editor, and local diagnostics. Saved bindings support modifier combinations and log-only previews. Game input injection is not implemented.'
+            Description             = 'Guitar practice tools and mapping editor, with audio health, guided manual tests, reviewed diagnostic exports, and settings recovery. Game input injection is not implemented.'
             InternalName            = 'FFTrueBard'
             AssemblyVersion         = $env:VER
             TestingAssemblyVersion  = $env:VER

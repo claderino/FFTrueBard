@@ -33,6 +33,7 @@ public sealed partial class ConfigWindow
 
     public void Update()
     {
+        UpdateSupport();
         mappingCapture.Tick(Now);
         calibration.Tick(Now);
         labelledTest.Tick(Now);
@@ -97,7 +98,17 @@ public sealed partial class ConfigWindow
         save();
     }
 
-    public void Dispose() => StopTools();
+    public void Dispose()
+    {
+        StopTools();
+        if (checklist.Running)
+        {
+            checklist.UpdateNotes(checklistNotes);
+            checklist.Cancel(Now);
+            config.PracticeMode = true;
+            SaveChecklist();
+        }
+    }
 
     private void DrawTuner()
     {
@@ -159,7 +170,7 @@ public sealed partial class ConfigWindow
     {
         ImGui.TextWrapped("Measure silence, soft low-E picks, then normal low-E picks. Each recording lasts five seconds. " +
             "Use your dry input; do not change guitar volume or interface gain midway.");
-        ImGui.BeginDisabled(detector.SampleRate <= 0);
+        ImGui.BeginDisabled(!detector.IsCapturing);
         if (ImGui.Button("Start / restart calibration"))
         {
             EnterTool();
@@ -185,9 +196,11 @@ public sealed partial class ConfigWindow
             ImGui.TextWrapped(suggestion.Warning);
             if (ImGui.Button("Apply suggested gate and stability"))
             {
-                config.RmsGate = suggestion.Gate;
-                config.StableFrames = suggestion.StableFrames;
-                SettingsChanged();
+                ChangeSettings("Calibration Apply", () =>
+                {
+                    config.RmsGate = suggestion.Gate;
+                    config.StableFrames = suggestion.StableFrames;
+                }, detection: true);
             }
             ImGui.TextDisabled("YIN threshold, release time, and minimum interval are unchanged. Validate with a detection test.");
         }
@@ -208,7 +221,7 @@ public sealed partial class ConfigWindow
         }
         ImGui.SliderInt("Picks per string", ref testRepeats, 1, 10);
         ImGui.EndDisabled();
-        ImGui.BeginDisabled(detector.SampleRate <= 0);
+        ImGui.BeginDisabled(!detector.IsCapturing);
         if (ImGui.Button("Start labelled test"))
         {
             EnterTool();

@@ -40,6 +40,102 @@ instead of silently switching to your microphone. You can explicitly select
 **Windows default** if needed. Switching devices/channels stops an active debug
 recording; start another recording after the switch.
 
+## Prepare for manual testing
+
+The **Testing & recovery** tab groups audio health, a guided checklist, settings
+recovery, and diagnostic export. Test detection and mapping previews, not actual
+FFXIV control: this build still does not send keyboard or mouse events.
+
+### Check audio health
+
+The health panel is also available under **Audio & tuning**. It shows arriving
+audio blocks, sample and processed-frame counts, accepted-note counts, last-frame
+ages, RMS/dBFS, peak level, clipping, and dropped-data counters.
+
+- **Silent input** means callbacks and processing frames are arriving, but the
+  selected channel is nearly zero. Check routing if you are playing.
+- **Below noise gate** means audio is arriving below the gate, as expected while
+  muted. A soft note below the gate can need tuning.
+- **No audio callbacks / capture stalled** means recent audio did not arrive.
+  This does not establish that the guitar is silent.
+- **Processing stalled** means callbacks arrived without recent pitch frames.
+- **Stopped** means capture or processing is stopped/failed. Read the status
+  message, then use **Restart capture** if appropriate.
+
+Health uses a 1.5-second stale threshold and a two-second startup grace period.
+Counts reset on capture restart except lifetime dropped counters. Signal-present
+status is not a guarantee of correct pitch recognition.
+
+### Follow the checklist
+
+The checklist records your observations and per-step frame/note counts; it does
+not decide whether your hardware passed automatically.
+
+1. Select **Begin guided manual test**.
+2. Select **Prepare step and open its tab**. Follow the instructions for silence,
+   six open strings, five repeated low-E picks, one Em chord, then a mapping
+   preview. The repeated-pick step prepares Detection test; select its Start
+   button when ready.
+3. Return to **Testing & recovery**, enter notes, and select **Pass**, **Issue**,
+   or **Skipped** for the current step.
+4. Select **Next step**, or **Finish checklist** on the last step.
+
+Checkpoints save under `training-reports/manual-check-<id>.json` when you mark,
+advance, cancel, or unload an active checklist. Notes are limited to 2,000
+characters per step. A checklist continues collecting observations across tabs
+until finished/cancelled; it is not resumed automatically after plugin reload.
+Finish/cancel returns to Practice mode. Existing reports are not removed.
+
+### Reset or undo settings
+
+The **Reset and undo** section lists pre-edit recovery points. Mapping changes,
+calibration **Apply**, capture-device/channel changes, detection slider gestures,
+and resets save recovery points before changing settings. A slider gesture gets
+one pre-edit point rather than one per rendered frame.
+
+1. Select **Undo latest edit** or choose an older recovery point.
+2. Review the confirmation text and select **Confirm settings change**.
+3. Check the input status if a restore changes your device or channel.
+
+Restores cover mappings, mapping-preview enablement, input device/channel, and
+detection settings, not practice history or reports. They force Practice mode
+on. Restoring also backs up the current state, so restoring the newest point
+again can reverse the previous restore; select an older point for older edits.
+
+**Reset detection defaults** under Audio & tuning and **Reset mappings to
+original defaults** under Mappings both require confirmation and a backup.
+Detection reset preserves device/channel and bindings. Mapping reset replaces
+all bindings with the original defaults. The latest 20 valid recovery files are
+retained in `settings-backups`; unreadable files are skipped, not overwritten.
+Edits are blocked if a recovery point cannot be written. Recovery files can
+contain hardware names and are not automatically included in exports.
+
+### Export diagnostics for review
+
+The **Diagnostic export** section creates a local ZIP; nothing is uploaded.
+
+1. Select **Refresh available logs and reports**, then explicitly select any
+   diagnostic JSONL files or training/checklist JSON reports to attach. None are
+   selected automatically; the picker lists the latest 100 eligible files.
+2. Choose whether generated snapshots include device names (off by default).
+   Existing selected files are **not redacted** and may contain device names,
+   local paths, and your notes.
+3. Select **Prepare contents preview**. This stops and flushes debug recording, then
+   freezes selected file bytes and generated version/audio/settings snapshots.
+4. Inspect the filenames, sizes, SHA-256 hashes, and file-content previews.
+   Only the first 16 KiB of each file are displayed; inspect the original file
+   before approving larger attachments.
+5. Check **I reviewed these contents and want a local archive**, then select
+   **Create local ZIP from this preview**.
+6. Use **Copy ZIP path** to locate the file and decide whether to share it.
+
+The ZIP contains `session-info.json`, `settings.json`, and exactly the selected
+log/report bytes shown in the frozen preview, even if source files change later.
+It excludes raw audio, credentials, and automatic history/backups attachments.
+Exports have a 50 MiB uncompressed limit and are written under `exports` next to
+`diagnostics`. Linked files/directories and paths outside the allowlisted
+log/report folders are rejected. Export files are not automatically deleted.
+
 ## Edit note mappings
 
 The **Mappings** tab edits saved note-to-key/mouse assignments without rebuilding
@@ -280,7 +376,8 @@ Tests cover pitch accuracy across sample rates and harmonics, noise rejection,
 stability/gating/rearming, chord progression, JSONL recording, tuner readings,
 calibration, labelled trials, rhythm scores/click synthesis, and history
 persistence/recommendations, mapping validation, binding persistence, preview
-routing, and note selection. CI runs these
+routing, note selection, audio-health states, manual checklists, settings
+recovery, and reviewed diagnostic archives. CI runs these
 checks before building and publishing the plugin with its NAudio dependencies.
 Real guitar hardware and the in-game UI still require manual testing.
 

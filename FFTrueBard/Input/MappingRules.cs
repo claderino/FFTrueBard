@@ -23,6 +23,11 @@ public sealed record MappingResolution(string Status, string Action = "")
 /// <summary>Shared validation for the editor and log-only mapping route. No input injection.</summary>
 public static class MappingRules
 {
+    public static Dictionary<string, string> DefaultMappings() => new()
+    {
+        ["E2"] = "Mouse1", ["A2"] = "Mouse2", ["D3"] = "Mouse3", ["G3"] = "Mouse4", ["B3"] = "Mouse5", ["E4"] = "",
+        ["F2"] = "Key:W", ["F#2"] = "Key:A", ["G2"] = "Key:S", ["G#2"] = "Key:D",
+    };
     private static readonly string[] NoteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
     // Rounded note labels that the current 70-1300 Hz detector can produce.
     public const int MinMidi = 37;

@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using Dalamud.Plugin.Services;
+using FFTrueBard.Diagnostics;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 
@@ -16,6 +17,7 @@ public sealed class GuitarDetector(Configuration config, IPluginLog log) : IDisp
     private MMDevice? device;
     private long droppedAudioBlocks;
     private long droppedDetectionFrames;
+    private readonly AudioHealth health = new();
 
     public ChannelReader<DetectionFrame> Frames => frames.Reader;
     public string StatusText { get; private set; } = "Not started";
@@ -24,6 +26,8 @@ public sealed class GuitarDetector(Configuration config, IPluginLog log) : IDisp
     public long DroppedAudioBlocks => Interlocked.Read(ref droppedAudioBlocks);
     public long DroppedDetectionFrames => Interlocked.Read(ref droppedDetectionFrames);
     public int ActiveChannel { get; private set; }
+    public bool IsCapturing => health.Running;
+    public AudioHealthSnapshot Health => health.Snapshot(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), DroppedAudioBlocks, DroppedDetectionFrames);
     public IReadOnlyList<string> DeviceNames { get; private set; } = [];
 
     public void ApplySettings() => Volatile.Write(ref settings, config.GetDetectionSettings());
@@ -96,6 +100,7 @@ public sealed class GuitarDetector(Configuration config, IPluginLog log) : IDisp
                 if (source.IsCancellationRequested)
                     return;
                 var mono = new float[e.BytesRecorded / format.BlockAlign];
+                health.ObserveBlock(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), mono.Length);
                 var bytesPerSample = format.BitsPerSample / 8;
                 for (var i = 0; i < mono.Length; i++)
                 {
@@ -113,6 +118,8 @@ public sealed class GuitarDetector(Configuration config, IPluginLog log) : IDisp
             capture.RecordingStopped += (_, e) =>
             {
                 source.Cancel();
+                health.Stop();
+                StatusText = e.Exception is null ? "Capture stopped; restart capture to resume." : $"Capture stopped: {e.Exception.Message}";
                 if (e.Exception is not null)
                 {
                     StatusText = $"Capture stopped: {e.Exception.Message}";
@@ -120,6 +127,7 @@ public sealed class GuitarDetector(Configuration config, IPluginLog log) : IDisp
                 }
             };
             worker = Task.Run(() => DetectionLoop(blocks.Reader, rate, source.Token));
+            health.Begin(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             capture.StartRecording();
             StatusText = $"Capturing '{ActiveDevice}' at {rate} Hz, channel {channel + 1}/{format.Channels}";
         }
@@ -147,8 +155,9 @@ public sealed class GuitarDetector(Configuration config, IPluginLog log) : IDisp
                     frame[count++] = sample;
                     if (count != frame.Length)
                         continue;
-                    if (!frames.Writer.TryWrite(processor.Process(frame,
-                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), Volatile.Read(ref settings))))
+                    var result = processor.Process(frame, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), Volatile.Read(ref settings));
+                    health.ObserveFrame(result);
+                    if (!frames.Writer.TryWrite(result))
                         Interlocked.Increment(ref droppedDetectionFrames);
                     count = 0;
                 }
@@ -158,6 +167,7 @@ public sealed class GuitarDetector(Configuration config, IPluginLog log) : IDisp
         catch (Exception e)
         {
             StatusText = $"Detection stopped: {e.Message}";
+            health.Stop();
             log.Error(e, "FFTrueBard: pitch processing failed.");
         }
     }
@@ -165,6 +175,7 @@ public sealed class GuitarDetector(Configuration config, IPluginLog log) : IDisp
     private void Stop()
     {
         cancellation?.Cancel();
+        health.Stop();
         capture?.Dispose(); // Stops the capture thread before disposing its token source.
         capture = null;
         worker?.GetAwaiter().GetResult();

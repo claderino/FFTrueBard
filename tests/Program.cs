@@ -414,3 +414,148 @@ captureNote.Reset();
 Check(!captureNote.Armed && captureNote.Status == "", "Manual draft selection clears stale capture status");
 Check(JsonSerializer.Serialize(mappings) != beforeInvalid && mappings["A2"] == "Mouse2", "Note selection does not mutate mappings");
 Console.WriteLine($"PASS: {checks} total checks, including mapping validation, persistence, preview routing, and note selection.");
+
+var health = new AudioHealth();
+Check(health.Snapshot(1000, 0, 0).State == "stopped", "Health initially stopped");
+health.Begin(1000);
+Check(health.Snapshot(1500, 0, 0).State == "starting", "Health allows startup grace");
+Check(health.Snapshot(4000, 0, 0).State == "no-audio-callbacks", "Missing callbacks are not labelled silence");
+health.ObserveBlock(4000, 2048);
+Check(health.Snapshot(4000, 0, 0).State == "processing-stalled", "Raw callbacks distinguished from missing DSP frames");
+health.ObserveFrame(Mute(4000));
+Check(health.Snapshot(4000, 0, 0).State == "silent-input", "Real zero audio with arriving frames recognised");
+health.ObserveFrame(Mute(4000) with { Rms = 0.001f, Peak = 0.002f });
+Check(health.Snapshot(4000, 0, 0).State == "below-noise-gate", "Quiet noise below gate is distinct from zero signal");
+health.ObserveFrame(Heard(40, 4000));
+Check(health.Snapshot(4000, 0, 0).State == "signal-present", "Health reports active signal");
+health.ObserveFrame(Heard(40, 4000) with { Peak = 0.99f });
+Check(health.Snapshot(4000, 0, 0).ClippedFrames == 1 && health.Snapshot(4000, 0, 0).State == "clipping", "Clipping is visible and counted");
+Check(health.Snapshot(6000, 1, 2).State == "capture-stalled", "Capture stall detected after fresh frames stop");
+health.ObserveBlock(6100, 2048);
+Check(health.Snapshot(6100, 1, 2).State == "processing-stalled", "Processing stall detected while capture continues");
+health.ObserveFrame(Heard(40, 6100) with { Rms = float.NaN });
+var invalidHealth = health.Snapshot(6100, 1, 2);
+Check(invalidHealth.State == "invalid-samples" && invalidHealth.Rms == 0, "Health sanitises invalid samples for JSON export");
+health.Stop();
+Check(!health.Running && health.Snapshot(6200, 1, 2).State == "stopped", "Stopped capture never looks like a silent guitar");
+health.Begin(7000);
+Check(health.Snapshot(7000, 1, 2).ProcessedFrames == 0 && health.Snapshot(7000, 1, 2).DroppedAudioBlocks == 1,
+    "Capture restart clears per-capture metrics and preserves explicit lifetime drops");
+health.ObserveBlock(7100, 0);
+Check(health.Snapshot(7100, 0, 0).Blocks == 0, "Empty callbacks do not count as arriving audio");
+
+var manual = new ManualChecklist();
+manual.Start(1000);
+Check(manual.Steps.Count == 5 && !manual.Next(1100), "Checklist cannot auto-pass or advance an untested step");
+manual.Observe(Mute(900));
+manual.Observe(Mute(1100));
+manual.Observe(Heard(40, 1200) with { Note = "E2" });
+Check(manual.Current.Frames == 2 && manual.Current.AcceptedNotes["E2"] == 1, "Checklist tracks only frames from this session");
+Check(!manual.SetResult("automatic pass", ""), "Checklist accepts only explicit supported human results");
+manual.SetResult("Issue", new string('x', 2200));
+Check(manual.Current.Notes.Length == 2000, "Checklist notes bounded");
+Check(manual.Next(1300) && manual.Index == 1 && manual.Current.Frames == 0, "Step metrics kept separate");
+while (manual.Running)
+{
+    manual.SetResult("Skipped", "Not available on test machine");
+    manual.Next(2000);
+}
+Check(manual.Outcome == "Completed" && manual.FinishedMs == 2000, "Completed checklist retains labelled results");
+manual.Cancel(3000);
+Check(manual.Outcome == "Completed", "Cancelling inactive checklist does not rewrite completed outcome");
+manual.Start(4000);
+manual.UpdateNotes("Cable disconnected before grading");
+manual.Cancel(4500);
+Check(manual.Outcome == "Cancelled" && manual.Current.Notes.Contains("Cable"), "Partial notes survive cancellation");
+
+var supportDirectory = Path.Combine(Path.GetTempPath(), $"fftruebard-support-{Guid.NewGuid():N}");
+try
+{
+    var backupDirectory = Path.Combine(supportDirectory, "settings-backups");
+    var store = new SettingsBackups(backupDirectory);
+    var editable = new EditableSettings("NUX test interface", 0, 0.15f, 0.004f, 2, 150, 100, true, MappingRules.DefaultMappings());
+    var originalBackup = store.Create("Before mapping edit", editable);
+    editable.Mapping["E2"] = "Key:Ctrl+1";
+    Check(originalBackup.Settings.Mapping["E2"] == "Mouse1", "Backup is a deep copy, not a mutable live dictionary");
+    var persistedBackup = new SettingsBackups(backupDirectory).List().Single();
+    Check(persistedBackup.Settings.Mapping["E2"] == "Mouse1" && persistedBackup.Settings.Gate == 0.004f,
+        "Recovery points persist mappings and detection settings");
+    var restoredSettings = persistedBackup.Settings.Copy();
+    restoredSettings.Mapping["E2"] = "Key:2";
+    Check(persistedBackup.Settings.Mapping["E2"] == "Mouse1", "Restoring/editing a copy preserves the original recovery point");
+    for (var i = 0; i < 22; i++)
+        store.Create($"Edit {i}", editable);
+    var retained = store.List();
+    Check(retained.Count == SettingsBackups.Retention && retained[0].Reason == "Edit 21", "Backup retention keeps newest 20 in order");
+    File.WriteAllText(Path.Combine(backupDirectory, "settings-unreadable.json"), "user recovery notes");
+    store.List();
+    Check(File.ReadAllText(Path.Combine(backupDirectory, "settings-unreadable.json")) == "user recovery notes" && store.Warning.Length > 0,
+        "Unreadable recovery files preserved and reported");
+    var invalidRefused = false;
+    try { store.Create("Invalid", editable with { Gate = float.NaN }); }
+    catch (InvalidDataException) { invalidRefused = true; }
+    Check(invalidRefused, "Invalid recovery snapshots rejected before writing");
+    var tooLargeSettings = editable.Copy();
+    tooLargeSettings.Mapping["oversized"] = new string('x', SettingsBackups.MaxFileBytes + 1);
+    var largeBackupRefused = false;
+    try { store.Create("Too large", tooLargeSettings); }
+    catch (InvalidDataException) { largeBackupRefused = true; }
+    Check(largeBackupRefused, "Oversized recovery files are not created as unusable undo points");
+
+    var logDirectory2 = Path.Combine(supportDirectory, "diagnostics");
+    var reportsDirectory = Path.Combine(supportDirectory, "training-reports");
+    Directory.CreateDirectory(logDirectory2);
+    Directory.CreateDirectory(reportsDirectory);
+    File.WriteAllText(Path.Combine(logDirectory2, "sample.jsonl"), "{\"device\":\"NUX test\",\"note\":\"E2\"}\n");
+    File.WriteAllText(Path.Combine(reportsDirectory, "trial.json"), "{\"result\":\"Issue\"}");
+    File.WriteAllText(Path.Combine(logDirectory2, "private.txt"), "not exportable");
+    var export = new DiagnosticExport(supportDirectory);
+    var sources = export.ListSources();
+    Check(sources.Count == 2 && sources.All(s => !s.RelativePath.Contains("settings-backups")), "Export lists only allowlisted logs/reports, not backups or other files");
+    var frozen = export.Preview(sources.Select(s => s.RelativePath), "{\"version\":1}", "{\"device\":\"[omitted]\"}");
+    Check(frozen.Items.Count == 4 && frozen.Items.All(i => i.Sha256.Length == 64), "Preview freezes generated metadata and selected files with hashes");
+    File.WriteAllText(Path.Combine(logDirectory2, "sample.jsonl"), "changed after preview");
+    var refusedUnreviewed = false;
+    try { export.CreateArchive(frozen, reviewed: false); }
+    catch (InvalidOperationException) { refusedUnreviewed = true; }
+    Check(refusedUnreviewed, "Export requires explicit review approval");
+    var archiveFile = export.CreateArchive(frozen, reviewed: true);
+    using (var zip = System.IO.Compression.ZipFile.OpenRead(archiveFile))
+    {
+        Check(zip.Entries.Count == 4 && zip.GetEntry("session-info.json") is not null, "Archive contains only the preview manifest entries");
+        using var reader = new StreamReader(zip.GetEntry("diagnostics/sample.jsonl")!.Open());
+        Check(reader.ReadToEnd().Contains("NUX test"), "Export bytes match the reviewed snapshot, not files modified afterwards");
+    }
+    foreach (var forbidden in new[] { "../private.json", "diagnostics/private.txt", "settings-backups/settings-unreadable.json",
+        "training-reports/../../private.json", "C:/private.json", "diagnostics\\sample.jsonl", "training-reports/..\\private.json" })
+    {
+        var rejected = false;
+        try { export.Preview([forbidden], "{}", "{}"); }
+        catch (InvalidDataException) { rejected = true; }
+        Check(rejected, $"Export rejects non-allowlisted/traversal path: {forbidden}");
+    }
+    using (var large = new FileStream(Path.Combine(logDirectory2, "large.jsonl"), FileMode.CreateNew))
+        large.SetLength(DiagnosticExport.MaxBytes + 1);
+    var oversizedRejected = false;
+    try { export.Preview(["diagnostics/large.jsonl"], "{}", "{}"); }
+    catch (InvalidDataException) { oversizedRejected = true; }
+    Check(oversizedRejected, "Oversized export refused before allocating contents");
+    var unsafeArchiveRefused = false;
+    try { export.CreateArchive(new(DateTime.UtcNow, [new("../unsafe.json", [])]), reviewed: true); }
+    catch (InvalidDataException) { unsafeArchiveRefused = true; }
+    Check(unsafeArchiveRefused, "Archive entry names cannot escape the archive root");
+    var settingsOnly = export.Preview([], "{}", "{}");
+    Check(settingsOnly.Items.Count == 2, "No log/report attachments are automatically selected");
+}
+finally
+{
+    if (Directory.Exists(supportDirectory))
+    {
+        foreach (var file in Directory.GetFiles(supportDirectory, "*", SearchOption.AllDirectories))
+            File.Delete(file);
+        foreach (var directory in Directory.GetDirectories(supportDirectory, "*", SearchOption.AllDirectories).OrderByDescending(p => p.Length))
+            Directory.Delete(directory);
+        Directory.Delete(supportDirectory);
+    }
+}
+Console.WriteLine($"PASS: {checks} total checks, including audio health, checklist, recovery, and reviewed diagnostic export.");

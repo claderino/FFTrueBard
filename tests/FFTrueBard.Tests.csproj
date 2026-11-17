@@ -17,5 +17,9 @@
     <Compile Include="../FFTrueBard/Diagnostics/DebugRecorder.cs" Link="DebugRecorder.cs" />
     <Compile Include="../FFTrueBard/Input/MappingRules.cs" Link="MappingRules.cs" />
     <Compile Include="../FFTrueBard/Input/MappingNoteCapture.cs" Link="MappingNoteCapture.cs" />
+    <Compile Include="../FFTrueBard/Diagnostics/AudioHealth.cs" Link="AudioHealth.cs" />
+    <Compile Include="../FFTrueBard/Diagnostics/ManualChecklist.cs" Link="ManualChecklist.cs" />
+    <Compile Include="../FFTrueBard/Diagnostics/SettingsBackups.cs" Link="SettingsBackups.cs" />
+    <Compile Include="../FFTrueBard/Diagnostics/DiagnosticExport.cs" Link="DiagnosticExport.cs" />
   </ItemGroup>
 </Project>

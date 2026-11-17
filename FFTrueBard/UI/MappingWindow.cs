@@ -60,18 +60,13 @@ public sealed partial class ConfigWindow
             mappingStatus = error;
             return;
         }
-        try
+        if (ChangeSettings($"Mapping {note}", () => config.Mapping = updated))
         {
-            config.Mapping = updated;
-            save();
             mappingNote = note;
             mappingStatus = $"Saved {note} -> {(updated[note].Length == 0 ? "Ignore" : updated[note])}. No keys or clicks were sent.";
         }
-        catch (Exception e)
-        {
-            config.Mapping = original;
-            mappingStatus = $"Could not save mapping; previous bindings kept: {e.Message}";
-        }
+        else
+            mappingStatus = recoveryStatus;
     }
 
     private void RemoveMapping(string note)
@@ -79,17 +74,12 @@ public sealed partial class ConfigWindow
         var original = config.Mapping;
         var updated = new Dictionary<string, string>(original);
         updated.Remove(note);
-        try
+        if (ChangeSettings($"Remove mapping {note}", () => config.Mapping = updated))
         {
-            config.Mapping = updated;
-            save();
             mappingStatus = $"Removed {note}. Other bindings are unchanged.";
         }
-        catch (Exception e)
-        {
-            config.Mapping = original;
-            mappingStatus = $"Could not save removal; previous bindings kept: {e.Message}";
-        }
+        else
+            mappingStatus = recoveryStatus;
         pendingRemoval = null;
     }
 
@@ -102,8 +92,7 @@ public sealed partial class ConfigWindow
         var enabled = config.Enabled;
         if (ImGui.Checkbox("Enable mapping preview (when practice/tools are off)", ref enabled))
         {
-            config.Enabled = enabled;
-            save();
+            ChangeSettings("Mapping preview enabled", () => config.Enabled = enabled);
         }
 
         ImGui.Separator();
@@ -122,7 +111,7 @@ public sealed partial class ConfigWindow
         }
         ImGui.TextDisabled("Examples: E2, F#3, Bb3. Flat names are saved as their sharp equivalent. Detector labels: C#2-E6.");
 
-        ImGui.BeginDisabled(detector.SampleRate <= 0);
+        ImGui.BeginDisabled(!detector.IsCapturing);
         if (ImGui.Button("Pick a note to select it"))
         {
             StopTools();
@@ -252,6 +241,12 @@ public sealed partial class ConfigWindow
             if (ImGui.Button("Keep mapping"))
                 pendingRemoval = null;
         }
+        if (ImGui.Button("Reset mappings to original defaults..."))
+        {
+            pendingRestore = null;
+            recoveryOperation = "reset-mappings";
+        }
+        DrawRecoveryConfirmation();
 
         ImGui.Separator();
         if (lastMappingInput is null)

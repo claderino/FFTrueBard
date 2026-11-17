@@ -27,6 +27,11 @@ public sealed partial class ConfigWindow : IDisposable
         this.recorder = recorder;
         this.save = save;
         history = new PracticeHistory(Path.Combine(Path.GetDirectoryName(recorder.DirectoryPath)!, "practice-history.json"));
+        var configRoot = Path.GetDirectoryName(recorder.DirectoryPath)!;
+        backups = new SettingsBackups(Path.Combine(configRoot, "settings-backups"));
+        exporter = new DiagnosticExport(configRoot);
+        try { recoveryPoints = backups.List(); }
+        catch (Exception e) { recoveryStatus = $"Cannot list recovery points: {e.Message}"; }
         ResetPractice();
         if (config.Mapping.TryGetValue(mappingNote, out var initialAction))
             LoadMapping(mappingNote, initialAction);
@@ -52,6 +57,7 @@ public sealed partial class ConfigWindow : IDisposable
     public void Receive(DetectionFrame frame)
     {
         latest = frame;
+        checklist.Observe(frame);
         ReceiveMappingNote(frame);
         tuner.Receive(frame, tunerString);
         calibration.Receive(frame);
@@ -89,17 +95,12 @@ public sealed partial class ConfigWindow : IDisposable
         history.NewSession();
     }
 
-    private void SettingsChanged()
-    {
-        CancelMeasurements();
-        detector.ApplySettings();
-        save();
-    }
-
     public void Draw()
     {
         if (!visible)
             return;
+        if (!ImGui.IsAnyItemActive())
+            detectionEditBackedUp = routeEditBackedUp = false;
         ImGui.SetNextWindowSize(new Vector2(780, 660), ImGuiCond.FirstUseEver);
         if (!ImGui.Begin("FFTrueBard - Practice & diagnostics", ref visible))
         {
@@ -110,6 +111,8 @@ public sealed partial class ConfigWindow : IDisposable
         }
 
         ImGui.TextWrapped(detector.StatusText);
+        if (recoveryStatus.Length > 0)
+            ImGui.TextWrapped(recoveryStatus);
         var practiceMode = config.PracticeMode;
         if (ImGui.Checkbox("Practice mode (blocks mapped game inputs)", ref practiceMode))
         {
@@ -128,42 +131,47 @@ public sealed partial class ConfigWindow : IDisposable
 
         if (ImGui.BeginTabBar("fftruebard_tabs"))
         {
-            if (ImGui.BeginTabItem("Mappings"))
+            if (BeginToolTab("Testing & recovery"))
+            {
+                DrawSupport();
+                ImGui.EndTabItem();
+            }
+            if (BeginToolTab("Mappings"))
             {
                 DrawMappings();
                 ImGui.EndTabItem();
             }
-            if (ImGui.BeginTabItem("Chord practice"))
+            if (BeginToolTab("Chord practice"))
             {
                 DrawPractice();
                 ImGui.EndTabItem();
             }
-            if (ImGui.BeginTabItem("Tuner"))
+            if (BeginToolTab("Tuner"))
             {
                 DrawTuner();
                 ImGui.EndTabItem();
             }
-            if (ImGui.BeginTabItem("Calibration"))
+            if (BeginToolTab("Calibration"))
             {
                 DrawCalibration();
                 ImGui.EndTabItem();
             }
-            if (ImGui.BeginTabItem("Detection test"))
+            if (BeginToolTab("Detection test"))
             {
                 DrawDetectionTest();
                 ImGui.EndTabItem();
             }
-            if (ImGui.BeginTabItem("History"))
+            if (BeginToolTab("History"))
             {
                 DrawHistory();
                 ImGui.EndTabItem();
             }
-            if (ImGui.BeginTabItem("Audio & tuning"))
+            if (BeginToolTab("Audio & tuning"))
             {
                 DrawAudio();
                 ImGui.EndTabItem();
             }
-            if (ImGui.BeginTabItem("Debug log"))
+            if (BeginToolTab("Debug log"))
             {
                 DrawDebug();
                 ImGui.EndTabItem();
@@ -273,15 +281,15 @@ public sealed partial class ConfigWindow : IDisposable
         {
             if (ImGui.Selectable("Windows default (may be a microphone)", config.DeviceName == ""))
             {
-                config.DeviceName = "";
-                RestartCapture();
+                if (ChangeSettings("Input device", () => config.DeviceName = ""))
+                    RestartCapture();
             }
             foreach (var name in detector.DeviceNames)
             {
                 if (ImGui.Selectable(name, name == config.DeviceName))
                 {
-                    config.DeviceName = name;
-                    RestartCapture();
+                    if (ChangeSettings("Input device", () => config.DeviceName = name))
+                        RestartCapture();
                 }
             }
             ImGui.EndCombo();
@@ -294,11 +302,15 @@ public sealed partial class ConfigWindow : IDisposable
         var channel = config.InputChannel + 1;
         if (ImGui.SliderInt("Input channel (interface channel)", ref channel, 1, 8))
         {
-            config.InputChannel = channel - 1;
-            RestartCapture();
+            if (ChangeSettings("Input channel", () => config.InputChannel = channel - 1, createBackup: !routeEditBackedUp))
+            {
+                routeEditBackedUp = true;
+                RestartCapture();
+            }
         }
         ImGui.TextWrapped("Use the clean/dry guitar channel (NUX Dry Out). Pick the channel that carries your " +
             "guitar, not game playback. Capture uses the device's native sample rate.");
+        DrawAudioHealth();
 
         var threshold = config.DetectionThreshold;
         var gate = config.RmsGate;
@@ -312,22 +324,22 @@ public sealed partial class ConfigWindow : IDisposable
         changed |= ImGui.SliderInt("Quiet time to rearm (ms)", ref release, 40, 1000);
         if (changed)
         {
-            config.DetectionThreshold = threshold;
-            config.RmsGate = gate;
-            config.StableFrames = stable;
-            config.RetriggerMs = retrigger;
-            config.ReleaseMs = release;
-            SettingsChanged();
+            if (ChangeSettings("Detection tuning", () =>
+            {
+                config.DetectionThreshold = threshold;
+                config.RmsGate = gate;
+                config.StableFrames = stable;
+                config.RetriggerMs = retrigger;
+                config.ReleaseMs = release;
+            }, detection: true, createBackup: !detectionEditBackedUp))
+                detectionEditBackedUp = true;
         }
         if (ImGui.Button("Reset detection defaults"))
         {
-            config.DetectionThreshold = 0.15f;
-            config.RmsGate = 0.004f;
-            config.StableFrames = 2;
-            config.RetriggerMs = 150;
-            config.ReleaseMs = 100;
-            SettingsChanged();
+            recoveryOperation = "reset-detection";
+            pendingRestore = null;
         }
+        DrawRecoveryConfirmation();
         ImGui.TextWrapped("Raise the gate above your idle noise level, but below a soft pick. " +
             "Lower YIN thresholds are stricter. More stable frames reduce flicker but add delay. " +
             "A ringing note does not repeatedly trigger: mute it for the quiet time to play it again.");

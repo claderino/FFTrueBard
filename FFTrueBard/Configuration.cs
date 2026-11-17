@@ -5,7 +5,7 @@ namespace FFTrueBard;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 5;
+    public int Version { get; set; } = 6;
 
     public bool PracticeMode { get; set; } = true;
     public int PracticeChord { get; set; }
@@ -28,22 +28,7 @@ public sealed class Configuration : IPluginConfiguration
 
     /// <summary>Detected note name (e.g. "E2", "A3") to in-game action.</summary>
     /// Actions: "Mouse1".."Mouse5" or "Key:Space", "Key:Ctrl+Shift+1", ... Empty string = ignore.
-    public Dictionary<string, string> Mapping { get; set; } = new()
-    {
-        // Open strings -> mouse buttons
-        ["E2"] = "Mouse1",
-        ["A2"] = "Mouse2",
-        ["D3"] = "Mouse3",
-        ["G3"] = "Mouse4",
-        ["B3"] = "Mouse5",
-        ["E4"] = "",
-
-        // Fretted notes -> keys (placeholder defaults; edit here for now)
-        ["F2"] = "Key:W",
-        ["F#2"] = "Key:A",
-        ["G2"] = "Key:S",
-        ["G#2"] = "Key:D",
-    };
+    public Dictionary<string, string> Mapping { get; set; } = Input.MappingRules.DefaultMappings();
 
     // Detection tuning (mirrors the old detector defaults)
     public float DetectionThreshold { get; set; } = 0.15f;
@@ -51,6 +36,28 @@ public sealed class Configuration : IPluginConfiguration
     public int RetriggerMs { get; set; } = 150;
     public int StableFrames { get; set; } = 2;
     public int ReleaseMs { get; set; } = 100;
+
+    public Diagnostics.EditableSettings CaptureEditable()
+    {
+        var detection = GetDetectionSettings();
+        return new(DeviceName ?? "", Math.Clamp(InputChannel, 0, 7), detection.Threshold, detection.RmsGate,
+            detection.StableFrames, detection.RetriggerMs, detection.ReleaseMs, Enabled, new(Mapping));
+    }
+
+    public void RestoreEditable(Diagnostics.EditableSettings settings)
+    {
+        if (!settings.IsValid)
+            throw new InvalidDataException("Unsupported recovery settings.");
+        DeviceName = settings.DeviceName;
+        InputChannel = settings.InputChannel;
+        DetectionThreshold = settings.Threshold;
+        RmsGate = settings.Gate;
+        StableFrames = settings.StableFrames;
+        RetriggerMs = settings.RetriggerMs;
+        ReleaseMs = settings.ReleaseMs;
+        Enabled = settings.MappingEnabled;
+        Mapping = new(settings.Mapping);
+    }
 
     public Detection.DetectionSettings GetDetectionSettings() => new(
         Math.Clamp(DetectionThreshold, 0.02f, 0.5f), Math.Clamp(RmsGate, 0.0001f, 0.2f),
