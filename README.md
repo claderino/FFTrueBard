@@ -40,6 +40,77 @@ instead of silently switching to your microphone. You can explicitly select
 **Windows default** if needed. Switching devices/channels stops an active debug
 recording; start another recording after the switch.
 
+## Use your local lesson library
+
+The **Lessons** tab plays your own MP3 practice tracks and opens your lesson PDF
+in your Windows PDF viewer. No book, notation, or audio is included in the plugin
+or downloaded from GitHub. You must provide your own local copies on each PC.
+
+To set up the library:
+
+1. Open `/ftruebard` and select **Lessons → Local lesson locations**.
+2. Use **Browse** next to **Lesson root folder**, or paste an absolute path.
+   For Guitar Aerobics, choose the folder containing the book PDF and the
+   `_Exercises` and `_Rhythm` folders.
+3. If the files are stored separately, expand **Individual locations /
+   overrides** and select the **Lesson PDF file**, **Exercise MP3 folder**, and
+   **Rhythm MP3 folder** individually. Leave an override blank to use discovery
+   under the root. Clear old overrides when moving to another root.
+4. Select **Save locations and scan**. Review the resolved locations and any
+   missing-file messages. Multiple PDFs require an explicit file choice.
+5. Select **Open local lesson PDF** to read the book in your external viewer.
+
+Each PC saves its own locations. Files stay in place; the plugin does not copy,
+move, modify, or upload them. Scanning runs outside the game thread and lists
+up to 1,000 MP3 files directly in each audio folder, not nested subfolders.
+Web URLs and network shares are not supported. If you move the files, update
+the paths and scan again. Lesson paths are not included in diagnostic snapshots,
+and neither lesson media nor progress is automatically attached to exports.
+
+### Play and loop a track
+
+The player uses the Windows default playback device. Use headphones and the
+clean guitar capture channel so the detector does not hear the backing track.
+
+1. Choose an **Exercise / day** or **Week**, then select **Load selected week's
+   exercise track**. Recognized Guitar Aerobics filenames connect exercises
+   1–365 to the weekly MP3s. Unknown filenames and the tuning track remain
+   available under **All exercise / tuning tracks**.
+2. Alternatively, expand **Rhythm tracks by style / BPM** and select a track.
+   Style and BPM come from filenames; BPM filter `0` lists all tempos.
+3. Select **Play lesson audio**. Use **Pause audio**, **Stop audio**, the seek
+   slider, and **Lesson playback volume** as needed.
+4. Set **Loop A** and **Loop B** in seconds, or use **A = current** and
+   **B = current**. Check **Enable A-B loop**, then select **Apply loop
+   boundaries**. B must be at least 0.1 seconds after A and inside the track.
+   To disable a loop, clear the checkbox and apply again.
+
+Loading does not start playback automatically. Weekly tracks contain several
+exercises: set the individual exercise boundaries yourself. No timestamps,
+PDF page links, notation extraction, speed changes, or automatic exercise
+grading are provided. Loop boundaries operate on decoded audio frames; seeking
+and boundary changes can take about one output buffer to become audible.
+
+Lesson playback pauses chord grading and blocks mapped inputs. Closing the
+plugin window, restarting capture, or starting another training tool stops
+playback. After playback, use **Stop tools and resume chord checks** to resume
+chord practice. If you change the Windows output device, reload the track.
+
+### Save lesson progress
+
+Progress is your own assessment, separate from detected-note accuracy.
+
+1. Choose an exercise, mark **Completed (self-reported)** if appropriate, and
+   enter **Personal lesson notes**.
+2. Select **Save progress / notes**, or **Discard unsaved lesson edits**.
+   Save or discard before changing exercises. Unsaved edits are not saved on
+   plugin reload.
+
+Progress and notes save in `lesson-progress.json` next to `diagnostics`. The
+previous saved version is retained as `lesson-progress.json.bak`. They do not
+automatically sync between PCs. Each exercise supports up to 2,000 characters
+of notes. A marked completion does not mean the detector verified the exercise.
+
 ## Prepare for manual testing
 
 The **Testing & recovery** tab groups audio health, a guided checklist, settings
@@ -366,7 +437,8 @@ Dalamud development distribution available, build using:
 dotnet build FFTrueBard/FFTrueBard.csproj -c Release
 ```
 
-The dependency-free regression suite does not need FFXIV or an audio device:
+The regression suite uses NAudio for in-memory playback tests but does not need
+FFXIV or an audio device:
 
 ```powershell
 dotnet run --project tests/FFTrueBard.Tests.csproj -c Release
@@ -377,9 +449,15 @@ stability/gating/rearming, chord progression, JSONL recording, tuner readings,
 calibration, labelled trials, rhythm scores/click synthesis, and history
 persistence/recommendations, mapping validation, binding persistence, preview
 routing, note selection, audio-health states, manual checklists, settings
-recovery, and reviewed diagnostic archives. CI runs these
+recovery, reviewed diagnostic archives, local lesson discovery/progress, and
+sample-frame-aligned seeking and A-B looping. CI runs these
 checks before building and publishing the plugin with its NAudio dependencies.
 Real guitar hardware and the in-game UI still require manual testing.
+
+For an optional read-only decode check against your own lesson files, set
+`FFTRUEBARD_LESSON_TEST_ROOT` to the local course root before running the tests.
+This opens each discovered MP3 without playing it or copying its contents into
+the repository. Normal CI does not require or include course materials.
 
 ## Limitations
 

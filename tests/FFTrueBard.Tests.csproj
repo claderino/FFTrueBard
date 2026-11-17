@@ -6,6 +6,10 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="NAudio" Version="2.2.1" />
+    <Compile Include="../FFTrueBard/Lessons/LessonLibrary.cs" Link="LessonLibrary.cs" />
+    <Compile Include="../FFTrueBard/Lessons/LessonProgress.cs" Link="LessonProgress.cs" />
+    <Compile Include="../FFTrueBard/Lessons/LessonPlayer.cs" Link="LessonPlayer.cs" />
     <Compile Include="../FFTrueBard/Detection/YinPitch.cs" Link="YinPitch.cs" />
     <Compile Include="../FFTrueBard/Detection/PitchProcessor.cs" Link="PitchProcessor.cs" />
     <Compile Include="../FFTrueBard/Practice/ChordPractice.cs" Link="ChordPractice.cs" />

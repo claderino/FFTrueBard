@@ -559,3 +559,5 @@ finally
     }
 }
 Console.WriteLine($"PASS: {checks} total checks, including audio health, checklist, recovery, and reviewed diagnostic export.");
+LessonTests.Run(Check);
+Console.WriteLine($"PASS: {checks} total checks, including lesson discovery, progress, seeking, and A-B audio looping.");

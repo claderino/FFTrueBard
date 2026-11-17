@@ -1,7 +1,7 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
 
   <PropertyGroup>
-    <Version>1.5.0</Version>
+    <Version>1.6.0</Version>
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
     <Nullable>enable</Nullable>
@@ -12,7 +12,7 @@
     <Author>claderino</Author>
     <Name>FFTrueBard</Name>
     <Punchline>Play Final Fantasy XIV with an electric guitar.</Punchline>
-    <Description>Guitar practice tools and mapping editor, with audio health, guided manual tests, reviewed diagnostic exports, and settings recovery. Game input injection is not implemented.</Description>
+    <Description>Guitar practice and local lesson library with configurable media paths, MP3 playback/looping, progress, and diagnostics. Bring your own lesson files. Game input injection is not implemented.</Description>
     <RepoUrl>https://github.com/claderino/FFTrueBard</RepoUrl>
     <Tags>input;guitar;music;fun</Tags>
   </PropertyGroup>

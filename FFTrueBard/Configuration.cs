@@ -5,7 +5,15 @@ namespace FFTrueBard;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 6;
+    public int Version { get; set; } = 7;
+
+    // Local-only media locations. Never included in diagnostic snapshots or release assets.
+    public string LessonRoot { get; set; } = "";
+    public string LessonPdf { get; set; } = "";
+    public string LessonExercisesFolder { get; set; } = "";
+    public string LessonRhythmFolder { get; set; } = "";
+    public int LessonExercise { get; set; } = 1;
+    public float LessonVolume { get; set; } = 0.25f;
 
     public bool PracticeMode { get; set; } = true;
     public int PracticeChord { get; set; }

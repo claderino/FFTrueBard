@@ -12,3 +12,7 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# User-owned lesson media stays outside source control and release assets.
+*.mp3
+*.pdf

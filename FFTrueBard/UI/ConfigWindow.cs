@@ -28,6 +28,9 @@ public sealed partial class ConfigWindow : IDisposable
         this.save = save;
         history = new PracticeHistory(Path.Combine(Path.GetDirectoryName(recorder.DirectoryPath)!, "practice-history.json"));
         var configRoot = Path.GetDirectoryName(recorder.DirectoryPath)!;
+        lessonProgress = new Lessons.LessonProgress(Path.Combine(configRoot, "lesson-progress.json"));
+        lessonProgress.Load();
+        InitializeLessons();
         backups = new SettingsBackups(Path.Combine(configRoot, "settings-backups"));
         exporter = new DiagnosticExport(configRoot);
         try { recoveryPoints = backups.List(); }
@@ -97,6 +100,7 @@ public sealed partial class ConfigWindow : IDisposable
 
     public void Draw()
     {
+        lessonDialogs.Draw();
         if (!visible)
             return;
         if (!ImGui.IsAnyItemActive())
@@ -131,6 +135,11 @@ public sealed partial class ConfigWindow : IDisposable
 
         if (ImGui.BeginTabBar("fftruebard_tabs"))
         {
+            if (BeginToolTab("Lessons"))
+            {
+                DrawLessons();
+                ImGui.EndTabItem();
+            }
             if (BeginToolTab("Testing & recovery"))
             {
                 DrawSupport();

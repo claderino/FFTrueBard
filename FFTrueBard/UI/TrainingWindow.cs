@@ -22,7 +22,7 @@ public sealed partial class ConfigWindow
     private string reportStatus = "";
     private object? testMetadata;
     private static long Now => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-    public bool ToolsExclusive => trainingPaused || tunerMode || calibration.Running || labelledTest.Running;
+    public bool ToolsExclusive => trainingPaused || tunerMode || calibration.Running || labelledTest.Running || lessonPlayer.Playing;
     public string ExpectedContext => mappingCapture.Armed ? "mapping-note-selection" : calibration.Running ? $"calibration:{calibration.Phase}" :
         labelledTest.Running ? $"labelled-test:{labelledTest.Expected}:{labelledTest.Phase}" :
         tunerMode ? "tuner" : trainingPaused ? "practice-paused" : config.PracticeMode ? practice.Expected : "";
@@ -33,6 +33,7 @@ public sealed partial class ConfigWindow
 
     public void Update()
     {
+        UpdateLessons();
         UpdateSupport();
         mappingCapture.Tick(Now);
         calibration.Tick(Now);
@@ -82,6 +83,8 @@ public sealed partial class ConfigWindow
 
     private void StopTools()
     {
+        lessonPlayer.Stop();
+        lessonDialogs.Reset();
         mappingCapture.Cancel();
         CancelMeasurements();
         tunerMode = false;
@@ -101,6 +104,7 @@ public sealed partial class ConfigWindow
     public void Dispose()
     {
         StopTools();
+        lessonPlayer.Dispose();
         if (checklist.Running)
         {
             checklist.UpdateNotes(checklistNotes);
