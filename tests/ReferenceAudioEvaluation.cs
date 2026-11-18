@@ -105,6 +105,7 @@ internal sealed class ReferenceNoteScore(int number, int midi, ReferenceTiming t
     public int AcceptedEvents { get; set; }
     public int CorrectAcceptedEvents { get; set; }
     public int OctaveErrorAcceptedEvents { get; set; }
+    public int FreshAttackEvents { get; set; }
     public bool RecoveredByAcceptedEvent => CorrectAcceptedEvents > 0;
 }
 
@@ -146,6 +147,7 @@ internal static class ReferenceAudioEvaluation
             if (note is null) { outsideEvents++; continue; }
             note.AcceptedEvents++;
             var detection = frame.Detection;
+            if (detection.FreshAttack) note.FreshAttackEvents++;
             if (detection.Midi != note.ExpectedMidi && detection.Midi >= 0 && (detection.Midi - note.ExpectedMidi) % 12 == 0)
                 note.OctaveErrorAcceptedEvents++;
             if (detection.Midi == note.ExpectedMidi && double.IsFinite(detection.Cents) &&
@@ -239,11 +241,11 @@ internal static class ReferenceAudioEvaluation
         {
             using var csv = new StreamWriter(new FileStream(
                 Path.Combine(outputDirectory, $"frames-channel-{definition.Channels[c]}.csv"), FileMode.CreateNew, FileAccess.Write));
-            csv.WriteLine("startSeconds,endSeconds,midi,cents,hz,rms,peak,confidence,decision,acceptedCandidateMs");
+            csv.WriteLine("startSeconds,endSeconds,midi,cents,hz,rms,peak,confidence,decision,acceptedCandidateMs,freshAttack");
             foreach (var frame in frames[c])
             {
                 var d = frame.Detection;
-                csv.WriteLine(FormattableString.Invariant($"{frame.StartSeconds:R},{frame.EndSeconds:R},{d.Midi},{d.Cents:R},{d.Frequency:R},{d.Rms:R},{d.Peak:R},{d.Confidence:R},{d.Decision},{d.OnsetTimestampMs}"));
+                csv.WriteLine(FormattableString.Invariant($"{frame.StartSeconds:R},{frame.EndSeconds:R},{d.Midi},{d.Cents:R},{d.Frequency:R},{d.Rms:R},{d.Peak:R},{d.Confidence:R},{d.Decision},{d.OnsetTimestampMs},{d.FreshAttack}"));
             }
         }
         Console.WriteLine("REFERENCE BASELINE — measurement only, not a passing detector certification.");

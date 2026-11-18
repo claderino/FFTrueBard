@@ -20,6 +20,19 @@ public static class YinPitch
         if (y.Length < maxTau + w || w <= minTau + 2)
             return (0, 0);
 
+        // Suppress broadband pick noise above the supported fundamental range.
+        // Filtering only the analysis copy keeps raw levels/gating and the caller's samples unchanged.
+        var filtered = new float[y.Length];
+        var coefficient = (float)(1 - Math.Exp(-2 * Math.PI * fMax / sampleRate));
+        var state = y[0];
+        for (var i = 0; i < y.Length; i++)
+        {
+            if (!float.IsFinite(y[i])) return (0, 0);
+            state += coefficient * (y[i] - state);
+            filtered[i] = state;
+        }
+        y = filtered;
+
         // Difference function d(tau)
         var d = new float[maxTau + 1];
         for (var tau = 1; tau <= maxTau; tau++)

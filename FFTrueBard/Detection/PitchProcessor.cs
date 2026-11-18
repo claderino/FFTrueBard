@@ -5,7 +5,7 @@ public sealed record DetectionSettings(float Threshold, float RmsGate, int Stabl
 
 public sealed record DetectionFrame(long TimestampMs, double Frequency, string Note, int Midi,
     double Cents, float Rms, float Peak, float Confidence, string Decision, bool Released,
-    DetectionSettings Settings, long? OnsetTimestampMs = null);
+    DetectionSettings Settings, long? OnsetTimestampMs = null, bool FreshAttack = false);
 
 /// <summary>Audio-only state, owned by one capture worker. No game or UI calls.</summary>
 public sealed class PitchProcessor(int sampleRate)
@@ -17,6 +17,9 @@ public sealed class PitchProcessor(int sampleRate)
     private double quietMs;
     private long lastAcceptedAt = long.MinValue / 2;
     private long candidateStartedAt;
+    private readonly PickAttackDetector attacks = new(sampleRate);
+    private long attackAt = long.MinValue / 2;
+    private long consumedAttackAt = long.MinValue / 2;
 
     public DetectionFrame Process(float[] samples, long timestampMs, DetectionSettings settings)
     {
@@ -29,6 +32,16 @@ public sealed class PitchProcessor(int sampleRate)
         }
 
         var rms = (float)Math.Sqrt(squares / samples.Length);
+        var newAttack = attacks.Process(samples, timestampMs, settings);
+        if (newAttack is { } onset)
+        {
+            attackAt = onset;
+            candidate = -1;
+            agreeingFrames = 0;
+        }
+        // Attack evidence expires if no stable pitch follows, and can justify only one acceptance.
+        var freshAttack = attackAt > consumedAttackAt && timestampMs - attackAt <= 250;
+        var acceptedAttack = false;
         var freq = 0f;
         var confidence = 0f;
         var midi = -1;
@@ -66,7 +79,7 @@ public sealed class PitchProcessor(int sampleRate)
                 candidate = midi;
                 if (agreeingFrames < settings.StableFrames)
                     decision = "stabilizing";
-                else if (lastAccepted == midi)
+                else if (lastAccepted == midi && !freshAttack)
                     decision = "sustained";
                 else if (timestampMs - lastAcceptedAt < settings.RetriggerMs)
                     decision = "cooldown";
@@ -75,12 +88,14 @@ public sealed class PitchProcessor(int sampleRate)
                     decision = "accepted";
                     lastAccepted = midi;
                     lastAcceptedAt = timestampMs;
+                    acceptedAttack = freshAttack;
+                    consumedAttackAt = attackAt;
                 }
             }
         }
 
         return new DetectionFrame(timestampMs, freq, note, midi, cents, rms, peak,
             confidence, decision, quietMs >= settings.ReleaseMs, settings,
-            midi >= 0 ? candidateStartedAt : null);
+            midi >= 0 ? candidateStartedAt : null, acceptedAttack);
     }
 }

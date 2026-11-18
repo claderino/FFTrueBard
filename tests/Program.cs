@@ -575,3 +575,5 @@ LessonCatalogTests.Run(Check);
 Console.WriteLine($"PASS: {checks} total checks, including guided exercise catalogs, references, and audio cues.");
 ReferenceEvaluationTests.Run(Check);
 Console.WriteLine($"PASS: {checks} total checks, including independent reference-audio scoring and native-channel replay.");
+PickDetectionTests.Run(Check);
+Console.WriteLine($"PASS: {checks} total checks, including ringing repeated picks and false-trigger controls.");

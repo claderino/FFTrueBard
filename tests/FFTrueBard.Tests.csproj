@@ -15,6 +15,7 @@
     <Compile Include="../FFTrueBard/Lessons/LessonCatalog.cs" Link="LessonCatalog.cs" />
     <Compile Include="../FFTrueBard/Detection/YinPitch.cs" Link="YinPitch.cs" />
     <Compile Include="../FFTrueBard/Detection/PitchProcessor.cs" Link="PitchProcessor.cs" />
+    <Compile Include="../FFTrueBard/Detection/PickAttackDetector.cs" Link="PickAttackDetector.cs" />
     <Compile Include="../FFTrueBard/Practice/ChordPractice.cs" Link="ChordPractice.cs" />
     <Compile Include="../FFTrueBard/Practice/GuitarTuner.cs" Link="GuitarTuner.cs" />
     <Compile Include="../FFTrueBard/Practice/CalibrationWizard.cs" Link="CalibrationWizard.cs" />

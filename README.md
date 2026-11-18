@@ -590,12 +590,25 @@ Dalamud configuration:
 | YIN threshold | Lower is stricter about periodicity. |
 | Stable frames | Consecutive matching notes before acceptance; more adds delay. |
 | Minimum interval | Minimum time between accepted notes. |
-| Quiet time to rearm | Silence needed before the same note can trigger again. |
+| Quiet time to rearm | Silence needed to rearm when no fresh pick is recognized. |
 
 A sustained note doesn't auto-repeat. The live display includes Hz, cents from
 the nearest equal-tempered note (A4 = 440 Hz), RMS, peak, periodicity confidence,
 and the detector's decision. Confidence is not a probability of correctness.
 Lower input gain if the clipping warning appears.
+
+Clear repeated picks can now retrigger the same pitch without full silence.
+The detector looks for a level dip followed by a fresh attack, then still
+requires stable pitch and the configured minimum interval. Attack evidence
+expires after 250 ms and can justify only one acceptance. Soft repeats,
+heavy compression, high stability settings, or fast playing can still be missed.
+Deep tremolo or other sharp level changes can resemble picks; this is an
+envelope heuristic, not a guaranteed physical-pick detector.
+
+Pitch analysis applies a low-pass filter to an analysis copy to reduce
+high-frequency pick noise. The raw samples, level meters, noise gate, and
+saved tuning settings are unchanged. The lesson pitch-order pilot still
+requires muting between attempts; these changes do not add rhythm grading.
 
 ## Record diagnostics
 
@@ -612,6 +625,9 @@ the UI displays its exact path. Logs include device/channel/rate, UTC Unix-ms
 timestamps, frequency, note/octave, cents, RMS/peak, YIN confidence, settings,
 practice target/tolerance/result, mapping status, and dropped-data counters.
 Rejected and sustained frames are included, not just accepted notes.
+The `freshAttack` field identifies accepted events supported by the new
+envelope detector. The existing `onsetTimestampMs` remains the first
+agreeing pitch-frame timestamp, not a measured physical pick time.
 
 Detector decisions are `gated`, `unvoiced`, `stabilizing`, `cooldown`, `sustained`,
 and `accepted`. A typical frame row contains:
@@ -651,7 +667,8 @@ recovery, reviewed diagnostic archives, local lesson discovery/progress, and
 sample-frame-aligned seeking and A-B looping, local pitch-sequence validation,
 mute-separated pitch grading through the YIN detector, guided-catalog
 validation/filtering, catalog cue/reference resolution, independent reference
-scoring, and native-channel replay of generated audio. CI runs these
+scoring, native-channel replay of generated audio, ringing repeated picks,
+and held-note, decay, vibrato, gain, and noise controls. CI runs these
 checks before building and publishing the plugin with its NAudio dependencies.
 Real guitar hardware and the in-game UI still require manual testing.
 

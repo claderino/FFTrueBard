@@ -352,7 +352,8 @@ public sealed partial class ConfigWindow : IDisposable
         DrawRecoveryConfirmation();
         ImGui.TextWrapped("Raise the gate above your idle noise level, but below a soft pick. " +
             "Lower YIN thresholds are stricter. More stable frames reduce flicker but add delay. " +
-            "A ringing note does not repeatedly trigger: mute it for the quiet time to play it again.");
+            "A held note does not auto-repeat. A clear level dip and fresh pick can retrigger it after the minimum interval. " +
+            "If a soft repeat is missed, mute for the quiet time. Lesson pitch drills still require muting between attempts.");
         DrawLivePitch();
     }
 
