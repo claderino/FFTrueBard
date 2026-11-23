@@ -29,6 +29,8 @@ public sealed partial class ConfigWindow
     private float loopB;
     private bool lessonLoop;
     private bool initialiseLoop;
+    private static readonly string[] LessonTools = ["Tablature", "Guide", "Audio", "Pitch drill", "Notes"];
+    private string activeLessonTool = "Tablature";
     private bool LessonDirty => lessonNotes != lessonProgress.Get(config.LessonExercise).Notes ||
         lessonCompleted != lessonProgress.Get(config.LessonExercise).Completed;
 
@@ -323,14 +325,36 @@ public sealed partial class ConfigWindow
     private void DrawLessons()
     {
         if (!lessonScanRequested) ScanLessons(false);
+        ImGui.Spacing();
         DrawExerciseSelector();
         ImGui.Spacing();
-        if (!ImGui.BeginTabBar("lesson_tools")) return;
-        DrawToolTab("Guide", DrawLessonGuide);
-        DrawToolTab("Tablature", DrawLessonTablature);
-        DrawToolTab("Pitch drill", DrawLessonPitch);
-        DrawToolTab("Audio", DrawLessonAudio);
-        DrawToolTab("Notes", DrawLessonProgress);
-        ImGui.EndTabBar();
+        if (requestedTab is { } requested && LessonTools.Contains(requested))
+        {
+            activeLessonTool = requested;
+            requestedTab = null;
+        }
+
+        var right = ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X;
+        for (var i = 0; i < LessonTools.Length; i++)
+        {
+            var label = LessonTools[i];
+            if (i > 0) ContinueReaderRow(right, ReaderButtonWidth(label));
+            if (ReaderNavButton(label, label == activeLessonTool, underline: false)) activeLessonTool = label;
+        }
+        if (activeLessonTool == "Tablature" && textures is not null && !string.IsNullOrEmpty(TablaturePdfPath))
+        {
+            var width = TablatureToolbarWidth();
+            AlignReaderAction(right, width);
+            DrawTablatureToolbar();
+        }
+        ImGui.Separator();
+        DrawToolBody(activeLessonTool, activeLessonTool switch
+        {
+            "Tablature" => DrawLessonTablature,
+            "Guide" => DrawLessonGuide,
+            "Audio" => DrawLessonAudio,
+            "Pitch drill" => DrawLessonPitch,
+            _ => DrawLessonProgress,
+        });
     }
 }

@@ -1,5 +1,6 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.ManagedFontAtlas;
 using Dalamud.Plugin.Services;
 using FFTrueBard.Detection;
 using FFTrueBard.Diagnostics;
@@ -15,12 +16,13 @@ public sealed partial class ConfigWindow : IDisposable
     private readonly DebugRecorder recorder;
     private readonly Action save;
     private readonly ITextureProvider? textures;
+    private readonly IFontHandle? lessonHeading;
     private readonly List<string> recentNotes = [];
     private DetectionFrame? latest;
     private bool visible;
 
     public ConfigWindow(Configuration config, GuitarDetector detector, ChordPractice practice,
-        DebugRecorder recorder, Action save, ITextureProvider? textures = null)
+        DebugRecorder recorder, Action save, ITextureProvider? textures = null, IFontHandle? lessonHeading = null)
     {
         this.config = config;
         config.Mapping ??= [];
@@ -29,6 +31,7 @@ public sealed partial class ConfigWindow : IDisposable
         this.recorder = recorder;
         this.save = save;
         this.textures = textures;
+        this.lessonHeading = lessonHeading;
         history = new PracticeHistory(Path.Combine(Path.GetDirectoryName(recorder.DirectoryPath)!, "practice-history.json"));
         var configRoot = Path.GetDirectoryName(recorder.DirectoryPath)!;
         lessonProgress = new Lessons.LessonProgress(Path.Combine(configRoot, "lesson-progress.json"));
@@ -110,8 +113,10 @@ public sealed partial class ConfigWindow : IDisposable
             return;
         if (!ImGui.IsAnyItemActive())
             detectionEditBackedUp = routeEditBackedUp = false;
-        ImGui.SetNextWindowSize(new Vector2(740, 590), ImGuiCond.FirstUseEver);
-        if (!ImGui.Begin("FFTrueBard###FFTrueBard - Practice & diagnostics", ref visible))
+        var scale = ReaderScale;
+        using var readerStyle = new ReaderStyle(scale);
+        ImGui.SetNextWindowSize(new Vector2(770, 460) * scale, ImGuiCond.FirstUseEver);
+        if (!ImGui.Begin("FFTrueBard  /  Practice###FFTrueBard - Practice & diagnostics", ref visible))
         {
             ImGui.End();
             if (!visible)
@@ -119,46 +124,30 @@ public sealed partial class ConfigWindow : IDisposable
             return;
         }
 
-        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(8, 6) * (ImGui.GetFontSize() / 16f));
-        var practiceMode = config.PracticeMode;
-        if (ImGui.Checkbox("Practice mode", ref practiceMode))
-        {
-            config.PracticeMode = practiceMode;
-            StopTools();
-            ResetPractice();
-            save();
-        }
-        ImGui.SameLine();
-        ImGui.TextDisabled(practiceMode || ToolsExclusive ? "Mapping preview blocked" : "Mapping preview only");
-        if (ImGui.IsItemHovered()) ImGui.SetTooltip("FFTrueBard does not send keyboard or mouse input to the game.");
         if (ToolsExclusive)
         {
+            ImGui.TextDisabled("Chord checks paused");
             ImGui.SameLine();
             if (ImGui.SmallButton("Resume chord checks"))
                 StopTools();
             if (ImGui.IsItemHovered()) ImGui.SetTooltip("Stops active lesson audio, pitch drills, and other training tools.");
         }
 
-        ImGui.Spacing();
-        if (ImGui.BeginTabBar("fftruebard_workspaces"))
+        DrawWorkspaceNavigation();
+        switch (activeWorkspace)
         {
-            if (BeginWorkspace("Lessons"))
-            {
+            case "Lessons":
                 DrawLessons();
-                ImGui.EndTabItem();
-            }
-            if (BeginWorkspace("Practice"))
-            {
+                break;
+            case "Practice":
                 if (ImGui.BeginTabBar("practice_tools"))
                 {
                     DrawToolTab("Chords", DrawPractice);
                     DrawToolTab("History", DrawHistory);
                     ImGui.EndTabBar();
                 }
-                ImGui.EndTabItem();
-            }
-            if (BeginWorkspace("Input"))
-            {
+                break;
+            case "Input":
                 if (ImGui.BeginTabBar("input_tools"))
                 {
                     DrawToolTab("Live", DrawInputDashboard);
@@ -168,10 +157,8 @@ public sealed partial class ConfigWindow : IDisposable
                     DrawToolTab("Detection test", DrawDetectionTest);
                     ImGui.EndTabBar();
                 }
-                ImGui.EndTabItem();
-            }
-            if (BeginWorkspace("Settings"))
-            {
+                break;
+            case "Settings":
                 if (ImGui.BeginTabBar("settings_tools"))
                 {
                     DrawToolTab("Lesson files", DrawLessonFiles);
@@ -180,11 +167,8 @@ public sealed partial class ConfigWindow : IDisposable
                     DrawToolTab("Debug log", DrawDebug);
                     ImGui.EndTabBar();
                 }
-                ImGui.EndTabItem();
-            }
-            ImGui.EndTabBar();
+                break;
         }
-        ImGui.PopStyleVar();
         ImGui.End();
         if (!visible)
             StopTools();
@@ -193,20 +177,26 @@ public sealed partial class ConfigWindow : IDisposable
     private void DrawToolTab(string label, Action draw)
     {
         if (!BeginToolTab(label)) return;
+        DrawToolBody(label, draw);
+        ImGui.EndTabItem();
+    }
+
+    private static void DrawToolBody(string label, Action draw)
+    {
         ImGui.Spacing();
         // Keep workspace tabs visible while a long tool page scrolls.
         if (ImGui.BeginChild($"body_{label}", Vector2.Zero)) draw();
         ImGui.EndChild();
-        ImGui.EndTabItem();
     }
 
     private static bool PrimaryButton(string label)
     {
-        ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.12f, 0.39f, 0.36f, 1f));
-        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.17f, 0.48f, 0.44f, 1f));
-        ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.15f, 0.45f, 0.40f, 1f));
+        ImGui.PushStyleColor(ImGuiCol.Text, ReaderGold);
+        ImGui.PushStyleColor(ImGuiCol.Button, ReaderBrass);
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Rgb(0x51412c));
+        ImGui.PushStyleColor(ImGuiCol.ButtonActive, Rgb(0x665038));
         var pressed = ImGui.Button(label);
-        ImGui.PopStyleColor(3);
+        ImGui.PopStyleColor(4);
         return pressed;
     }
 

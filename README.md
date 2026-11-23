@@ -165,12 +165,11 @@ changes detector settings.
 
 ### Read tablature in the plugin
 
-Open **Lessons → Tablature** to display the notation from your selected local
-PDF. If the card or local book index has an excerpt, the viewer fits it to the
-panel width. Select **Full page** for context or use **Zoom** to enlarge the
-notation and scroll if needed. For an unlinked exercise, enter the PDF page
-number yourself. **Open book externally** is available if the preview can't
-render the PDF or you'd rather read it in your usual viewer.
+Open **Lessons → Tablature** to display notation from your selected local PDF.
+The reader starts at **Fit**. Use **+** or **−** to change the zoom, and
+**Full page** or **Excerpt** to switch views when a crop is available. For an
+unlinked exercise, enter the PDF page number yourself. **Open book externally**
+opens your usual PDF viewer.
 
 The plugin renders one view at a time in memory. It doesn't copy or upload
 pages, read notes from the notation, sync the view to audio, or grade what you

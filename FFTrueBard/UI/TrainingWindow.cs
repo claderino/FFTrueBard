@@ -110,6 +110,7 @@ public sealed partial class ConfigWindow
         StopTools();
         lessonPlayer.Dispose();
         DisposeLessonTablature();
+        lessonHeading?.Dispose();
         if (checklist.Running)
         {
             checklist.UpdateNotes(checklistNotes);

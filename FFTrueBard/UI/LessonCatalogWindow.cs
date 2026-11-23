@@ -130,20 +130,34 @@ public sealed partial class ConfigWindow
     {
         var exercise = config.LessonExercise;
         var lesson = SelectedCatalogExercise;
-        ImGui.TextUnformatted($"Week {Math.Min(52, (exercise - 1) / 7 + 1)}  /  Exercise {exercise}");
+        var title = lesson?.Title ?? (lessonLibrary?.Tablature?.Find(exercise) is not null ? "Book exercise" : "Exercise library");
+        var currentWeek = Math.Min(52, (exercise - 1) / 7 + 1);
+        var width = ImGui.GetContentRegionAvail().X;
+        var left = ImGui.GetCursorPosX();
+        var scale = ReaderScale;
+        var jumpWidth = ImGui.CalcTextSize("Jump to exercise").X + ImGui.GetStyle().FramePadding.X * 2 + ImGui.GetFrameHeight();
+        var navigationWidth = jumpWidth + 2 * (ImGui.GetFrameHeight() + ImGui.GetStyle().ItemSpacing.X);
+        ImGui.BeginGroup();
+        ImGui.TextColored(ReaderGold, $"WEEK {currentWeek:00}  /  EXERCISE {exercise:000} OF 365");
+        // Use the body font for titles with glyphs outside the optional display font.
+        float titleWidth;
+        using (title.All(c => c <= 0xff) ? lessonHeading?.Push() : null)
+        {
+            titleWidth = ImGui.CalcTextSize(title).X;
+            ImGui.TextWrapped(title);
+        }
+        ImGui.EndGroup();
+        if (width >= titleWidth + navigationWidth + 28 * scale && width >= 395 * scale)
+            ImGui.SameLine(left + width - navigationWidth);
+        ImGui.BeginGroup();
         ImGui.BeginDisabled(LessonNavigationBlocked);
         ImGui.BeginDisabled(exercise == 1);
         if (ImGui.ArrowButton("previous_exercise", ImGuiDir.Left)) SelectLessonExercise(exercise - 1);
         if (ImGui.IsItemHovered()) ImGui.SetTooltip("Previous exercise");
         ImGui.EndDisabled();
         ImGui.SameLine();
-        ImGui.BeginDisabled(exercise == 365);
-        if (ImGui.ArrowButton("next_exercise", ImGuiDir.Right)) SelectLessonExercise(exercise + 1);
-        if (ImGui.IsItemHovered()) ImGui.SetTooltip("Next exercise");
-        ImGui.EndDisabled();
-        ImGui.SameLine();
-        ImGui.SetNextItemWidth(Math.Clamp(ImGui.GetContentRegionAvail().X, 1, ImGui.GetFontSize() * 29));
-        if (ImGui.BeginCombo("##exercise_picker", lesson?.Title ?? "Browse exercises"))
+        ImGui.SetNextItemWidth(Math.Max(1, Math.Min(jumpWidth, ImGui.GetContentRegionAvail().X - ImGui.GetFrameHeight() - ImGui.GetStyle().ItemSpacing.X)));
+        if (ImGui.BeginCombo("##exercise_picker", "Jump to exercise"))
         {
             if (ImGui.IsWindowAppearing()) exerciseJump = exercise;
             ImGui.SetNextItemWidth(ImGui.GetFontSize() * 7);
@@ -156,7 +170,7 @@ public sealed partial class ConfigWindow
                 ImGui.CloseCurrentPopup();
             }
             ImGui.EndDisabled();
-            if (ImGui.BeginCombo("Jump to week", $"Week {Math.Min(52, (exercise - 1) / 7 + 1)}"))
+            if (ImGui.BeginCombo("Jump to week", $"Week {currentWeek}"))
             {
                 for (var week = 1; week <= 52; week++)
                     if (ImGui.Selectable($"Week {week}")) SelectLessonExercise((week - 1) * 7 + 1);
@@ -190,10 +204,15 @@ public sealed partial class ConfigWindow
             }
             ImGui.EndCombo();
         }
+        ImGui.SameLine();
+        ImGui.BeginDisabled(exercise == 365);
+        if (ImGui.ArrowButton("next_exercise", ImGuiDir.Right)) SelectLessonExercise(exercise + 1);
+        if (ImGui.IsItemHovered()) ImGui.SetTooltip("Next exercise");
         ImGui.EndDisabled();
+        ImGui.EndDisabled();
+        ImGui.EndGroup();
         if (LessonDirty)
         {
-            ImGui.SameLine();
             if (ImGui.SmallButton("Unsaved notes")) requestedTab = "Notes";
         }
     }

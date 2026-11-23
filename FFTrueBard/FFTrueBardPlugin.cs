@@ -1,4 +1,5 @@
 using Dalamud.Game.Command;
+using Dalamud.Interface.ManagedFontAtlas;
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
@@ -33,8 +34,16 @@ public sealed class FFTrueBardPlugin : IDalamudPlugin
         detector = new GuitarDetector(config, Log);
         practice = new ChordPractice();
         recorder = new DebugRecorder(Path.Combine(PluginInterface.GetPluginConfigDirectory(), "diagnostics"));
+        var serifPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "georgia.ttf");
+        var lessonHeading = File.Exists(serifPath)
+            ? PluginInterface.UiBuilder.FontAtlas.NewDelegateFontHandle(e => e.OnPreBuild(toolkit =>
+            {
+                var font = new SafeFontConfig { SizePx = 28f };
+                toolkit.Font = toolkit.AddFontFromFile(serifPath, font);
+            }))
+            : null;
         configWindow = new ConfigWindow(config, detector, practice, recorder,
-            () => PluginInterface.SavePluginConfig(config), Textures);
+            () => PluginInterface.SavePluginConfig(config), Textures, lessonHeading);
 
         // Swap in a real injector implementation when ready (see InputInjector.cs).
         inputInjector = new DummyInputInjector(Log);

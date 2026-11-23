@@ -43,18 +43,14 @@ public sealed partial class ConfigWindow
         return selected;
     }
 
-    private bool BeginWorkspace(string label)
+    private static string? WorkspaceForTool(string? tool) => tool switch
     {
-        var target = requestedTab switch
-        {
             "Guide" or "Tablature" or "Pitch drill" or "Audio" or "Notes" => "Lessons",
             "Chords" or "History" => "Practice",
             "Live" or "Setup" or "Tuner" or "Calibration" or "Detection test" => "Input",
             "Lesson files" or "Mappings" or "Testing & recovery" or "Debug log" => "Settings",
             _ => null,
-        };
-        return ImGui.BeginTabItem(label, target == label ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None);
-    }
+    };
 
     private void UpdateSupport()
     {

@@ -20,9 +20,52 @@ public sealed partial class ConfigWindow
     private int tablatureManualPage;
     private int tablatureZoom = 100;
 
+    private string TablaturePdfPath => lessonLibrary?.Paths.Pdf ?? config.LessonPdf;
+
+    private (int? Page, LessonTablatureCrop? Crop) LinkedTablature()
+    {
+        var lesson = SelectedCatalogExercise;
+        var indexed = lessonLibrary?.Tablature?.Find(config.LessonExercise);
+        var page = lesson?.PdfPage ?? indexed?.PdfPage;
+        return (page, lesson?.TablatureCrop ?? (page == indexed?.PdfPage ? indexed?.Crop : null));
+    }
+
+    private float TablatureToolbarWidth()
+    {
+        var step = ImGui.GetStyle().ItemSpacing.X;
+        var width = ReaderButtonWidth("-") + ReaderButtonWidth("Fit") + ReaderButtonWidth("+") + 2 * step;
+        if (LinkedTablature().Crop is not null)
+            width += ReaderButtonWidth(tablatureFullPage ? "Excerpt" : "Full page") + step;
+        return width;
+    }
+
+    private void DrawTablatureToolbar()
+    {
+        bool Action(string label, string help)
+        {
+            var pressed = ImGui.Button(label);
+            if (ImGui.IsItemHovered()) ImGui.SetTooltip(help);
+            return pressed;
+        }
+
+        if (Action("-###tab_zoom_out", "Zoom out")) tablatureZoom = Math.Max(100, tablatureZoom - 25);
+        ImGui.SameLine();
+        if (tablatureZoom == 100 ? PrimaryButton("Fit") : ImGui.Button("Fit")) tablatureZoom = 100;
+        if (ImGui.IsItemHovered()) ImGui.SetTooltip("Fit the notation to the available width");
+        ImGui.SameLine();
+        if (Action("+###tab_zoom_in", "Zoom in")) tablatureZoom = Math.Min(250, tablatureZoom + 25);
+        if (LinkedTablature().Crop is not null)
+        {
+            ImGui.SameLine();
+            if (Action(tablatureFullPage ? "Excerpt###tab_page_mode" : "Full page###tab_page_mode",
+                tablatureFullPage ? "Return to just this exercise" : "Show the complete PDF page"))
+                tablatureFullPage = !tablatureFullPage;
+        }
+    }
+
     private void DrawLessonTablature()
     {
-        var path = lessonLibrary?.Paths.Pdf ?? config.LessonPdf;
+        var path = TablaturePdfPath;
         if (string.IsNullOrEmpty(path))
         {
             ImGui.TextWrapped("Select your local lesson PDF to view its tablature here.");
@@ -30,25 +73,17 @@ public sealed partial class ConfigWindow
             return;
         }
 
-        if (ImGui.Button("Open book externally")) OpenLessonPdf();
         if (textures is null)
         {
+            if (ImGui.Button("Open book externally")) OpenLessonPdf();
             if (lessonStatus.StartsWith("Could not open PDF", StringComparison.Ordinal))
                 ImGui.TextWrapped(lessonStatus);
             ImGui.TextWrapped("In-game PDF rendering is unavailable here. You can still open the book externally.");
             return;
         }
 
-        var lesson = SelectedCatalogExercise;
-        var indexed = lessonLibrary?.Tablature?.Find(config.LessonExercise);
-        var linkedPage = lesson?.PdfPage ?? indexed?.PdfPage;
-        var linkedCrop = lesson?.TablatureCrop ?? (linkedPage == indexed?.PdfPage ? indexed?.Crop : null);
+        var (linkedPage, linkedCrop) = LinkedTablature();
         var page = linkedPage ?? tablatureManualPage;
-        if (linkedCrop is not null)
-        {
-            ImGui.SameLine();
-            ImGui.Checkbox("Full page", ref tablatureFullPage);
-        }
         if (lessonStatus.StartsWith("Could not open PDF", StringComparison.Ordinal))
             ImGui.TextWrapped(lessonStatus);
         if (linkedPage is null)
@@ -60,7 +95,11 @@ public sealed partial class ConfigWindow
             ImGui.BeginDisabled(tablatureManualInput < 1);
             if (ImGui.Button("View page")) page = tablatureManualPage = tablatureManualInput;
             ImGui.EndDisabled();
-            if (page < 1) return;
+            if (page < 1)
+            {
+                if (ImGui.Button("Open book externally")) OpenLessonPdf();
+                return;
+            }
         }
 
         var crop = tablatureFullPage ? null : linkedCrop;
@@ -84,21 +123,47 @@ public sealed partial class ConfigWindow
                 if (ImGui.Button("Retry preview")) tablatureRequest = null;
             }
             else ImGui.TextUnformatted($"Loading local PDF page {page}...");
+            if (ImGui.Button("Open book externally")) OpenLessonPdf();
             return;
         }
 
-        ImGui.SetNextItemWidth(ImGui.GetFontSize() * 11);
-        ImGui.SliderInt("Zoom", ref tablatureZoom, 100, 250, "%d%%");
-        ImGui.SameLine();
-        ImGui.TextDisabled(crop is null ? $"PDF page {page}" : $"Exercise excerpt · PDF page {page}");
-        if (ImGui.BeginChild($"tablature_page_{tablatureRevision}", Vector2.Zero, false,
-            ImGuiWindowFlags.HorizontalScrollbar))
+        DrawScorePlate(texture, excerpt: crop is not null);
+        var step = SelectedCatalogExercise?.Steps.ElementAtOrDefault(lessonStep);
+        if (!string.IsNullOrWhiteSpace(step) && step.Length <= 120 && ImGui.GetContentRegionAvail().Y > 3 * ImGui.GetTextLineHeightWithSpacing())
+            ImGui.TextWrapped(step);
+        ImGui.Separator();
+        var footerWidth = ImGui.GetContentRegionAvail().X;
+        ImGui.TextDisabled($"Local PDF  /  Page {page}  /  Not graded");
+        if (footerWidth >= ImGui.CalcTextSize("Local PDF  /  Page 0000  /  Not graded    Open book externally").X + 20 * ReaderScale)
+            ImGui.SameLine(ImGui.GetCursorPosX() + footerWidth - ImGui.CalcTextSize("Open book externally").X - 2 * ImGui.GetStyle().FramePadding.X);
+        if (ImGui.SmallButton("Open book externally")) OpenLessonPdf();
+    }
+
+    private void DrawScorePlate(IDalamudTextureWrap texture, bool excerpt)
+    {
+        var scale = ReaderScale;
+        var padding = new Vector2(13, 10) * scale;
+        var width = Math.Max(1, ImGui.GetContentRegionAvail().X - ImGui.GetStyle().ScrollbarSize - padding.X * 2 - 2);
+        var display = width * (tablatureZoom / 100f) * texture.Size / texture.Width;
+        var heading = ImGui.GetTextLineHeightWithSpacing();
+        var plateHeight = display.Y + heading + padding.Y * 2 + 5 * scale;
+        var available = Math.Max(80 * scale, ImGui.GetContentRegionAvail().Y - ImGui.GetFrameHeightWithSpacing() * 2);
+        var flags = tablatureZoom == 100 && plateHeight <= available
+            ? ImGuiWindowFlags.NoScrollbar
+            : ImGuiWindowFlags.HorizontalScrollbar;
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, ReaderPaper);
+        ImGui.PushStyleColor(ImGuiCol.Border, Rgb(0xa58f67));
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, padding);
+        ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, 4 * scale);
+        if (ImGui.BeginChild($"tablature_page_{tablatureRevision}", new(0, Math.Min(plateHeight, available)), true, flags))
         {
-            var width = Math.Max(1, ImGui.GetWindowWidth() - ImGui.GetStyle().ScrollbarSize - 1);
-            var display = width * (tablatureZoom / 100f) * texture.Size / texture.Width;
-            ImGui.Image(texture.Handle, display);
+            ImGui.TextColored(Rgb(0x61513a), (excerpt ? "GUITAR TAB" : "BOOK PAGE") +
+                (tablatureZoom == 100 ? "" : $"  /  {tablatureZoom}%"));
+            ImGui.Image(texture.Handle, display, Vector2.Zero, Vector2.One, ReaderPaper);
         }
         ImGui.EndChild();
+        ImGui.PopStyleVar(2);
+        ImGui.PopStyleColor(2);
     }
 
     private void UpdateLessonTablature(TablatureRequest request)
