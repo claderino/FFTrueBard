@@ -25,6 +25,8 @@ public sealed partial class ConfigWindow
         lessonPitch.Stop("Pitch sequence changed. Review it, then restart grading.");
         pitchSequence = null;
         sequenceReviewed = false;
+        visualizedRunSource = null;
+        lessonVisualPage = 0;
         sequenceRequest++;
         if (loadingSequence is not null) { reloadPitchSequence = true; return; }
         if (SelectedCatalogExercise?.Mode == "guided")
@@ -95,11 +97,13 @@ public sealed partial class ConfigWindow
         if (SelectedCatalogExercise?.Mode == "guided")
         {
             ImGui.TextWrapped("Pitch grading is disabled for this guided card. Use its steps and self-checks instead.");
+            DrawLessonVisualizer();
             return;
         }
         ImGui.Separator();
         ImGui.TextUnformatted("Visual pitch-order drill (slow, mute-separated pilot)");
         ImGui.TextWrapped("Pick ONE note, mute all strings until Ready, then pick again. Repeated pitches require a mute. This does not follow the MP3 clock or grade sixteenth-note speed, picking direction, rhythm, or fingering.");
+        DrawLessonVisualizer();
         DrawLessonPitchFeedback();
         if (!ImGui.CollapsingHeader("Pitch targets and setup", pitchSequence is null ? ImGuiTreeNodeFlags.DefaultOpen : ImGuiTreeNodeFlags.None))
             return;
@@ -164,6 +168,8 @@ public sealed partial class ConfigWindow
                 pitchAudioDrops = detector.DroppedAudioBlocks;
                 pitchFrameDrops = detector.DroppedDetectionFrames;
                 lessonPitch.Start(pitchSequence, Now, config.LessonPitchTolerance);
+                visualizedRunSource = pitchSequence;
+                lessonVisualPage = 0;
             }
             ImGui.EndDisabled();
         }

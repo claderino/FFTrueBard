@@ -577,3 +577,5 @@ ReferenceEvaluationTests.Run(Check);
 Console.WriteLine($"PASS: {checks} total checks, including independent reference-audio scoring and native-channel replay.");
 PickDetectionTests.Run(Check);
 Console.WriteLine($"PASS: {checks} total checks, including ringing repeated picks and false-trigger controls.");
+VisualizerTests.Run(Check);
+Console.WriteLine($"PASS: {checks} total checks, including input visualizer history and exercise map paging.");

@@ -13,6 +13,7 @@
     <Compile Include="../FFTrueBard/Lessons/LessonSequence.cs" Link="LessonSequence.cs" />
     <Compile Include="../FFTrueBard/Lessons/LessonPitchPractice.cs" Link="LessonPitchPractice.cs" />
     <Compile Include="../FFTrueBard/Lessons/LessonCatalog.cs" Link="LessonCatalog.cs" />
+    <Compile Include="../FFTrueBard/UI/VisualizerData.cs" Link="VisualizerData.cs" />
     <Compile Include="../FFTrueBard/Detection/YinPitch.cs" Link="YinPitch.cs" />
     <Compile Include="../FFTrueBard/Detection/PitchProcessor.cs" Link="PitchProcessor.cs" />
     <Compile Include="../FFTrueBard/Detection/PickAttackDetector.cs" Link="PickAttackDetector.cs" />

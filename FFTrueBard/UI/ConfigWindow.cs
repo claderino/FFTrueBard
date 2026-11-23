@@ -60,6 +60,7 @@ public sealed partial class ConfigWindow : IDisposable
     public void Receive(DetectionFrame frame)
     {
         latest = frame;
+        inputVisualizer.Observe(frame);
         ReceiveLessonPitch(frame);
         checklist.Observe(frame);
         ReceiveMappingNote(frame);
@@ -355,6 +356,8 @@ public sealed partial class ConfigWindow : IDisposable
             "A held note does not auto-repeat. A clear level dip and fresh pick can retrigger it after the minimum interval. " +
             "If a soft repeat is missed, mute for the quiet time. Lesson pitch drills still require muting between attempts.");
         DrawLivePitch();
+        if (ImGui.CollapsingHeader("Live input visualizer", ImGuiTreeNodeFlags.DefaultOpen))
+            DrawInputVisualizer();
     }
 
     private void RestartCapture()
@@ -365,6 +368,7 @@ public sealed partial class ConfigWindow : IDisposable
         tuner.Reset();
         detector.Start();
         latest = null;
+        inputVisualizer.Clear();
         practice.Retry();
         save();
     }

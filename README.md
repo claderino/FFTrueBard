@@ -277,6 +277,23 @@ until restart and are not saved as practice history or marked as lesson
 completion. Closing the window, playing lesson audio, or starting another tool
 stops the drill.
 
+### Visualize the exercise and live input
+
+In **Lessons**, expand **Exercise & input visualizer** to preview the order
+of targets from the loaded local note file. Page through the tiles before
+playing. During a pitch drill, the map follows the current target and labels
+it **Mute** or **Ready**. It also shows matches, skips, and wrong attempts.
+Optional `S` and `F` labels show the suggested string and fret, not what the
+detector identified. Guided cards without pitch grading show the input graph
+only. The map is not synchronized to lesson audio.
+
+Open **Live input graph** within that panel, or **Audio & tuning → Live input
+visualizer**, to see the most recent 120 detector frames. The upper trace shows
+RMS, the current noise gate, and clipping. The lower trace distinguishes pitch
+estimates, accepted events, and accepted events with fresh-pick evidence.
+Newest frames appear on the right; the graph is not an onset timing
+measurement. It stores no raw audio or history on disk.
+
 ### Local pitch-data format
 
 Pitch data is a small JSON file you provide on each PC. No course transcription
