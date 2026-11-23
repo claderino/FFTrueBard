@@ -20,4 +20,5 @@ venv/
 *.notes.json
 *.course.json
 *.tablature.json
+!FFTrueBard/Lessons/Indexes/guitar-aerobics.tablature.json
 *.reference.json

@@ -6,6 +6,10 @@ internal static class LessonTablatureIndexTests
 {
     public static void Run(Action<bool, string> check)
     {
+        var bundled = LessonTablatureIndex.BundledIndexForValidation();
+        check(bundled.Count == 365 && Enumerable.Range(1, 365).All(i => bundled.Find(i) is not null),
+            "Embedded index is coordinate-only and covers all 365 exercises");
+
         var directory = Path.Combine(Path.GetTempPath(), $"fftruebard-tablature-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
         var pdf = Path.Combine(directory, "my-book.pdf");
@@ -41,6 +45,9 @@ internal static class LessonTablatureIndexTests
             Write(hash, [first]);
             File.AppendAllText(pdf, "changed edition");
             check(LessonLibrary.Scan(new("", pdf, "", "")).Tablature is null, "Changing PDF bytes invalidates the saved index");
+            File.Delete(sidecar);
+            using (var file = File.OpenWrite(pdf)) file.SetLength(3_381_197);
+            check(LessonTablatureIndex.LoadForPdf(pdf) is null, "Same-length PDFs must still match the built-in index hash");
 
             void Write(string digest, LessonTablatureEntry[] exercises) =>
                 File.WriteAllText(sidecar, JsonSerializer.Serialize(new { schemaVersion = 1, pdfSha256 = digest, exercises }));

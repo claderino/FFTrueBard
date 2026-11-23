@@ -176,12 +176,15 @@ The plugin renders one view at a time in memory. It doesn't copy or upload
 pages, read notes from the notation, sync the view to audio, or grade what you
 play from it.
 
-A book index can link exercises that don't have guided cards. Put a
-`<book-name>.tablature.json` file beside `<book-name>.pdf`, then rescan in
-**Settings → Lesson files**. The index stores only exercise numbers, one-based
-PDF pages, and crop coordinates. It is validated against the SHA-256 hash of
-the PDF, so changing editions does not silently reuse unrelated coordinates.
-Keep the index with your local PDF; it is not included in the plugin.
+For the supported Guitar Aerobics PDF, the plugin includes a coordinate-only
+index for all 365 exercises. Select your book in **Settings → Lesson files**,
+then select **Save locations and scan**. No JSON file is needed. The index
+contains no book pages, text, notation, audio, or guided lesson cards.
+
+The built-in index matches the exact PDF by SHA-256, not by filename. For a
+different PDF, use **View page** to select a page manually or put your own
+`<book-name>.tablature.json` beside `<book-name>.pdf` and rescan. A valid local
+index takes precedence and also must match the PDF.
 
 An index uses `schemaVersion: 1`, a `pdfSha256` hex string, and an `exercises`
 array. Each entry has `exercise`, `pdfPage`, and `crop` (`x`, `y`, `width`,

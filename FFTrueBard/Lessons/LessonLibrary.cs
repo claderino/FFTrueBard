@@ -36,8 +36,8 @@ public sealed record LessonLibrary(LessonPaths Paths, IReadOnlyList<LessonTrack>
         if (root.Length == 0 && exercises.Length == 0 && rhythm.Length == 0 && pdf.Length == 0)
             warnings.Add("Select a local lesson root folder, or set the individual locations below.");
         LessonTablatureIndex? tablature = null;
-        try { tablature = LessonTablatureIndex.LoadForPdf(pdf); }
-        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        try { tablature = LessonTablatureIndex.LoadForPdf(pdf, warnings.Add); }
+        catch (Exception e) when (LessonTablatureIndex.IsIndexError(e))
         {
             warnings.Add($"Tablature index ignored: {e.Message}");
         }

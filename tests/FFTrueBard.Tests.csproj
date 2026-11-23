@@ -14,6 +14,7 @@
     <Compile Include="../FFTrueBard/Lessons/LessonPitchPractice.cs" Link="LessonPitchPractice.cs" />
     <Compile Include="../FFTrueBard/Lessons/LessonCatalog.cs" Link="LessonCatalog.cs" />
     <Compile Include="../FFTrueBard/Lessons/LessonTablatureIndex.cs" Link="LessonTablatureIndex.cs" />
+    <EmbeddedResource Include="../FFTrueBard/Lessons/Indexes/guitar-aerobics.tablature.json" LogicalName="FFTrueBard.Lessons.GuitarAerobics.tablature.json" />
     <Compile Include="../FFTrueBard/UI/VisualizerData.cs" Link="VisualizerData.cs" />
     <Compile Include="../FFTrueBard/Detection/YinPitch.cs" Link="YinPitch.cs" />
     <Compile Include="../FFTrueBard/Detection/PitchProcessor.cs" Link="PitchProcessor.cs" />

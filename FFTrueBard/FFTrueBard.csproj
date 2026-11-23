@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.2.1" />
+    <EmbeddedResource Include="Lessons/Indexes/guitar-aerobics.tablature.json" LogicalName="FFTrueBard.Lessons.GuitarAerobics.tablature.json" />
   </ItemGroup>
 
 </Project>
