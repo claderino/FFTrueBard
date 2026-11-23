@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Remove="PdfRenderer/**/*.cs" />
     <PackageReference Include="NAudio" Version="2.2.1" />
     <Compile Include="../FFTrueBard/Lessons/LessonLibrary.cs" Link="LessonLibrary.cs" />
     <Compile Include="../FFTrueBard/Lessons/LessonProgress.cs" Link="LessonProgress.cs" />

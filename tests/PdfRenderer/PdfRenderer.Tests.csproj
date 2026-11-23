@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../FFTrueBard/Lessons/LessonPdfRenderer.cs" Link="LessonPdfRenderer.cs" />
+    <Compile Include="../../FFTrueBard/Lessons/LessonLibrary.cs" Link="LessonLibrary.cs" />
+    <Compile Include="../../FFTrueBard/Lessons/LessonCatalog.cs" Link="LessonCatalog.cs" />
+    <Compile Include="../../FFTrueBard/Lessons/LessonSequence.cs" Link="LessonSequence.cs" />
+    <Compile Include="../../FFTrueBard/Lessons/LessonTablatureIndex.cs" Link="LessonTablatureIndex.cs" />
+    <EmbeddedResource Include="../../FFTrueBard/Lessons/Indexes/guitar-aerobics.tablature.json"
+                      LogicalName="FFTrueBard.Lessons.GuitarAerobics.tablature.json" />
+  </ItemGroup>
+</Project>

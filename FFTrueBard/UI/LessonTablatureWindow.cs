@@ -1,5 +1,6 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Textures;
 using Dalamud.Interface.Textures.TextureWraps;
 using FFTrueBard.Lessons;
 
@@ -190,11 +191,12 @@ public sealed partial class ConfigWindow
 
         if (!tablatureNeedsLoad || tablatureLoad is not null || textures is not { } provider) return;
         tablatureNeedsLoad = false;
-        // Windows renders the page off the game thread; Dalamud schedules the texture upload.
+        // Render off the game thread; Dalamud schedules the texture upload.
         tablatureLoad = Task.Run(async () =>
         {
-            var image = await LessonPdfRenderer.RenderAsync(request.Path, request.Page, request.Crop).ConfigureAwait(false);
-            return await provider.CreateFromImageAsync(image, "FFTrueBard tablature").ConfigureAwait(false);
+            var image = LessonPdfRenderer.Render(pluginDirectory, request.Path, request.Page, request.Crop);
+            return await provider.CreateFromRawAsync(RawImageSpecification.Bgra32(image.Width, image.Height), image.Pixels,
+                "FFTrueBard tablature").ConfigureAwait(false);
         });
     }
 

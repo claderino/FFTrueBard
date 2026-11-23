@@ -48,6 +48,9 @@ jobs:
           "VER=$ver" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
           dotnet build FFTrueBard/FFTrueBard.csproj -c Release -o artifacts/plugin "-p:Version=$ver"
 
+      - name: Test the bundled PDF renderer
+        run: dotnet run --project tests/PdfRenderer/PdfRenderer.Tests.csproj -c Release -- artifacts/plugin
+
       - name: Package release zip
         shell: pwsh
         env:
@@ -55,6 +58,23 @@ jobs:
         run: |
             $outDir = Join-Path $pwd 'artifacts/plugin'
             if (-not (Test-Path "$outDir/FFTrueBard.dll")) { throw 'Plugin build output missing.' }
+
+            # The NuGet package supplies the DLL but omits the upstream license files.
+            # Fetch notices for the same pinned binary; fail if the archive or DLL differs.
+            $upstream = New-Item -ItemType Directory -Path artifacts/pdfium-release -Force
+            $archive = Join-Path $upstream.FullName 'pdfium-win-x64.tgz'
+            Invoke-WebRequest -Uri https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F8179/pdfium-win-x64.tgz -OutFile $archive
+            if ((Get-FileHash $archive).Hash -ne '836A77C9053F624839C66010CDDEA7B675628A36B8831D2330178BB169D241B6') {
+              throw 'Unexpected PDFium release archive.'
+            }
+            tar -xf $archive -C $upstream.FullName LICENSE licenses bin/pdfium.dll
+            if ($LASTEXITCODE -ne 0) { throw 'Could not extract PDFium notices.' }
+            if ((Get-FileHash "$outDir/fftruebard-pdfium.dll").Hash -ne (Get-FileHash "$($upstream.FullName)/bin/pdfium.dll").Hash) {
+              throw 'Bundled PDFium and its license archive do not match.'
+            }
+            $notices = New-Item -ItemType Directory -Path "$outDir/pdfium-licenses" -Force
+            Copy-Item "$($upstream.FullName)/LICENSE" $notices.FullName
+            Copy-Item "$($upstream.FullName)/licenses/*" $notices.FullName
 
             $manifest = [ordered]@{
               Author              = 'claderino'
@@ -73,7 +93,7 @@ jobs:
               Set-Content -Encoding utf8 (Join-Path $outDir 'FFTrueBard.json')
 
             $files = Get-ChildItem $outDir -File | Where-Object { $_.Extension -in '.dll', '.json' }
-            Compress-Archive -Path $files.FullName -DestinationPath .\FFTrueBard.zip -Force
+            Compress-Archive -Path ($files.FullName + @($notices.FullName)) -DestinationPath .\FFTrueBard.zip -Force
             Write-Host "Packaged manually from $outDir"
 
       - name: Generate pluginmaster.json

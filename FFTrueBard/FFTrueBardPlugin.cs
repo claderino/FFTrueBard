@@ -43,7 +43,8 @@ public sealed class FFTrueBardPlugin : IDalamudPlugin
             }))
             : null;
         configWindow = new ConfigWindow(config, detector, practice, recorder,
-            () => PluginInterface.SavePluginConfig(config), Textures, lessonHeading);
+            () => PluginInterface.SavePluginConfig(config), Textures, lessonHeading,
+            PluginInterface.AssemblyLocation.DirectoryName);
 
         // Swap in a real injector implementation when ready (see InputInjector.cs).
         inputInjector = new DummyInputInjector(Log);

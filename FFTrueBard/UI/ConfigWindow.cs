@@ -17,12 +17,14 @@ public sealed partial class ConfigWindow : IDisposable
     private readonly Action save;
     private readonly ITextureProvider? textures;
     private readonly IFontHandle? lessonHeading;
+    private readonly string pluginDirectory;
     private readonly List<string> recentNotes = [];
     private DetectionFrame? latest;
     private bool visible;
 
     public ConfigWindow(Configuration config, GuitarDetector detector, ChordPractice practice,
-        DebugRecorder recorder, Action save, ITextureProvider? textures = null, IFontHandle? lessonHeading = null)
+        DebugRecorder recorder, Action save, ITextureProvider? textures = null, IFontHandle? lessonHeading = null,
+        string? pluginDirectory = null)
     {
         this.config = config;
         config.Mapping ??= [];
@@ -32,6 +34,7 @@ public sealed partial class ConfigWindow : IDisposable
         this.save = save;
         this.textures = textures;
         this.lessonHeading = lessonHeading;
+        this.pluginDirectory = pluginDirectory ?? AppContext.BaseDirectory;
         history = new PracticeHistory(Path.Combine(Path.GetDirectoryName(recorder.DirectoryPath)!, "practice-history.json"));
         var configRoot = Path.GetDirectoryName(recorder.DirectoryPath)!;
         lessonProgress = new Lessons.LessonProgress(Path.Combine(configRoot, "lesson-progress.json"));
