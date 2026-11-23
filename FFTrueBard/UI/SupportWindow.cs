@@ -43,6 +43,19 @@ public sealed partial class ConfigWindow
         return selected;
     }
 
+    private bool BeginWorkspace(string label)
+    {
+        var target = requestedTab switch
+        {
+            "Guide" or "Tablature" or "Pitch drill" or "Audio" or "Notes" => "Lessons",
+            "Chords" or "History" => "Practice",
+            "Live" or "Setup" or "Tuner" or "Calibration" or "Detection test" => "Input",
+            "Lesson files" or "Mappings" or "Testing & recovery" or "Debug log" => "Settings",
+            _ => null,
+        };
+        return ImGui.BeginTabItem(label, target == label ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None);
+    }
+
     private void UpdateSupport()
     {
         if (preparingExport?.IsCompleted == true)
@@ -154,7 +167,7 @@ public sealed partial class ConfigWindow
         {
             case 0:
                 trainingPaused = true;
-                requestedTab = "Audio & tuning";
+                requestedTab = "Live";
                 break;
             case 1:
                 trainingPaused = tunerMode = true;
@@ -169,7 +182,7 @@ public sealed partial class ConfigWindow
                 config.PracticeChord = 0;
                 config.AlternateChords = false;
                 ResetPractice();
-                requestedTab = "Chord practice";
+                requestedTab = "Chords";
                 break;
             case 4:
                 config.PracticeMode = false;

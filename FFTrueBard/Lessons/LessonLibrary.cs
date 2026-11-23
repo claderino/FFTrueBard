@@ -8,6 +8,8 @@ public sealed record LessonTrack(string Path, string Title, int Week = 0, int Fi
 public sealed record LessonLibrary(LessonPaths Paths, IReadOnlyList<LessonTrack> Exercises,
     IReadOnlyList<LessonTrack> Rhythm, IReadOnlyList<string> Warnings)
 {
+    public LessonTablatureIndex? Tablature { get; private init; }
+
     public static LessonLibrary Scan(LessonPaths requested)
     {
         var warnings = new List<string>();
@@ -33,7 +35,16 @@ public sealed record LessonLibrary(LessonPaths Paths, IReadOnlyList<LessonTrack>
             warnings.Add("Lesson PDF is missing or is not a .pdf file.");
         if (root.Length == 0 && exercises.Length == 0 && rhythm.Length == 0 && pdf.Length == 0)
             warnings.Add("Select a local lesson root folder, or set the individual locations below.");
-        return new(new(root, pdf, exercises, rhythm), Tracks(exercises, false, warnings), Tracks(rhythm, true, warnings), warnings);
+        LessonTablatureIndex? tablature = null;
+        try { tablature = LessonTablatureIndex.LoadForPdf(pdf); }
+        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            warnings.Add($"Tablature index ignored: {e.Message}");
+        }
+        return new(new(root, pdf, exercises, rhythm), Tracks(exercises, false, warnings), Tracks(rhythm, true, warnings), warnings)
+        {
+            Tablature = tablature,
+        };
     }
 
     public static string Normalize(string path)

@@ -109,6 +109,7 @@ public sealed partial class ConfigWindow
     {
         StopTools();
         lessonPlayer.Dispose();
+        DisposeLessonTablature();
         if (checklist.Running)
         {
             checklist.UpdateNotes(checklistNotes);
@@ -353,6 +354,7 @@ public sealed partial class ConfigWindow
                 config.AlternateChords = second >= 0 && first != second;
                 ResetPractice();
                 save();
+                requestedTab = "Chords";
             }
         }
         ImGui.TextWrapped("History measures checked pitches, not physical fingering or musical fluency. " +

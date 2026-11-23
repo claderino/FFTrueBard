@@ -83,7 +83,7 @@ public sealed partial class ConfigWindow
     {
         if (!lessonPitch.Running) return;
         if (!detector.IsCapturing || pitchAudioDrops != detector.DroppedAudioBlocks || pitchFrameDrops != detector.DroppedDetectionFrames)
-            lessonPitch.Stop("Capture stopped or data was dropped — grading stopped without adding mistakes. Check Audio & tuning, then restart this drill.");
+            lessonPitch.Stop("Capture stopped or dropped data. No mistakes added. Check Input, then restart.");
     }
 
     private void ReceiveLessonPitch(DetectionFrame frame)
@@ -96,16 +96,51 @@ public sealed partial class ConfigWindow
     {
         if (SelectedCatalogExercise?.Mode == "guided")
         {
-            ImGui.TextWrapped("Pitch grading is disabled for this guided card. Use its steps and self-checks instead.");
-            DrawLessonVisualizer();
+            ImGui.TextWrapped("This exercise is self-assessed. The live graph is available without grading.");
+            if (ImGui.Button("Open guide")) requestedTab = "Guide";
+            if (ImGui.TreeNode("Live input graph"))
+            {
+                DrawInputVisualizer();
+                ImGui.TreePop();
+            }
             return;
         }
-        ImGui.Separator();
-        ImGui.TextUnformatted("Visual pitch-order drill (slow, mute-separated pilot)");
-        ImGui.TextWrapped("Pick ONE note, mute all strings until Ready, then pick again. Repeated pitches require a mute. This does not follow the MP3 clock or grade sixteenth-note speed, picking direction, rhythm, or fingering.");
+        ImGui.TextWrapped("Pick one note, then mute until Ready. Pitch order only; no rhythm or technique score.");
+        var sequence = pitchSequence is { } loaded && loaded.Exercise == config.LessonExercise ? loaded : null;
+        var currentRun = sequence is not null && ReferenceEquals(visualizedRunSource, sequence);
+        if (lessonPitch.Running)
+        {
+            if (ImGui.Button("Stop drill")) lessonPitch.Stop();
+            ImGui.SameLine();
+            if (ImGui.Button("Skip target")) lessonPitch.Skip();
+        }
+        else if (sequence is not null)
+        {
+            ImGui.Checkbox("I reviewed these targets against my lesson", ref sequenceReviewed);
+            ImGui.BeginDisabled(!sequenceReviewed || !detector.IsCapturing ||
+                loadingSequence is not null || loadingCatalog is not null || scanningLessons is not null);
+            if (PrimaryButton(currentRun ? "Restart drill" : "Start drill"))
+            {
+                EnterTool(); // Stops lesson playback and other training tools.
+                pitchAudioDrops = detector.DroppedAudioBlocks;
+                pitchFrameDrops = detector.DroppedDetectionFrames;
+                lessonPitch.Start(sequence, Now, config.LessonPitchTolerance);
+                visualizedRunSource = sequence;
+                currentRun = true;
+                lessonVisualPage = 0;
+            }
+            ImGui.EndDisabled();
+            if (!detector.IsCapturing)
+            {
+                ImGui.SameLine();
+                if (ImGui.SmallButton("Open input setup")) requestedTab = "Setup";
+            }
+        }
+        if (currentRun) DrawLessonPitchFeedback();
         DrawLessonVisualizer();
-        DrawLessonPitchFeedback();
-        if (!ImGui.CollapsingHeader("Pitch targets and setup", pitchSequence is null ? ImGuiTreeNodeFlags.DefaultOpen : ImGuiTreeNodeFlags.None))
+        if (currentRun) DrawLessonScoreDetails();
+
+        if (!ImGui.CollapsingHeader("Pitch targets and setup", sequence is null ? ImGuiTreeNodeFlags.DefaultOpen : ImGuiTreeNodeFlags.None))
             return;
         ImGui.BeginDisabled(lessonPitch.Running || loadingSequence is not null || loadingCatalog is not null || scanningLessons is not null);
         if (ImGui.InputText("Pitch-sequence file override", ref sequencePath, 2048))
@@ -137,23 +172,21 @@ public sealed partial class ConfigWindow
         }
         ImGui.EndDisabled();
         ImGui.TextWrapped(sequenceStatus);
-        if (pitchSequence is not null && pitchSequence.Exercise == config.LessonExercise)
+        if (sequence is not null)
         {
-            ImGui.TextWrapped($"{pitchSequence.Title}\nSource supplied by local file: {pitchSequence.Source}");
-            ImGui.TextDisabled("String/fret annotations are suggestions only; the detector cannot identify the physical string.");
+            ImGui.TextWrapped($"{sequence.Title}\nSource: {sequence.Source}");
             if (ImGui.TreeNode("Review expected sequence"))
             {
                 ImGui.BeginChild("review_pitch_sequence", new Vector2(0, 120));
-                for (var i = 0; i < pitchSequence.Notes.Length; i++)
+                for (var i = 0; i < sequence.Notes.Length; i++)
                 {
-                    var note = pitchSequence.Notes[i];
+                    var note = sequence.Notes[i];
                     ImGui.TextUnformatted($"{i + 1}: {note.Name} | {note.Hint}");
                 }
                 ImGui.EndChild();
                 ImGui.TreePop();
             }
             ImGui.BeginDisabled(lessonPitch.Running);
-            ImGui.Checkbox("I reviewed these targets against my lesson", ref sequenceReviewed);
             var tolerance = float.IsFinite(config.LessonPitchTolerance) ? Math.Clamp(config.LessonPitchTolerance, 5, 50) : 35;
             if (ImGui.SliderFloat("Lesson pitch tolerance (cents)", ref tolerance, 5, 50, "%.0f"))
             {
@@ -161,28 +194,11 @@ public sealed partial class ConfigWindow
                 save();
             }
             ImGui.EndDisabled();
-            ImGui.BeginDisabled(!sequenceReviewed || !detector.IsCapturing || loadingSequence is not null || loadingCatalog is not null || scanningLessons is not null);
-            if (ImGui.Button("Start / restart visual pitch drill"))
-            {
-                EnterTool(); // Stops lesson audio, other tools, and the preceding run.
-                pitchAudioDrops = detector.DroppedAudioBlocks;
-                pitchFrameDrops = detector.DroppedDetectionFrames;
-                lessonPitch.Start(pitchSequence, Now, config.LessonPitchTolerance);
-                visualizedRunSource = pitchSequence;
-                lessonVisualPage = 0;
-            }
-            ImGui.EndDisabled();
         }
     }
 
     private void DrawLessonPitchFeedback()
     {
-        ImGui.BeginDisabled(!lessonPitch.Running);
-        if (ImGui.Button("Stop visual pitch drill")) lessonPitch.Stop();
-        ImGui.SameLine();
-        if (ImGui.Button("Skip expected note (explicitly unplayed)")) lessonPitch.Skip();
-        ImGui.EndDisabled();
-
         var color = lessonPitch.State switch
         {
             "correct" => new Vector4(0.3f, 1, 0.45f, 1),
@@ -190,29 +206,31 @@ public sealed partial class ConfigWindow
             "uncertain" => new Vector4(1, 0.8f, 0.25f, 1),
             _ => new Vector4(0.65f, 0.85f, 1, 1),
         };
-        ImGui.TextColored(color, $"{lessonPitch.State.ToUpperInvariant()} | {lessonPitch.Outcome}");
-        ImGui.TextWrapped(lessonPitch.Feedback);
         if (lessonPitch.Running && lessonPitch.Expected is { } expected)
         {
-            ImGui.TextUnformatted($"NEXT #{lessonPitch.Index + 1}: {expected.Name} | {expected.Hint}");
-            ImGui.TextUnformatted(lessonPitch.WaitingForMute ? "MUTE to rearm" : "READY for next pick");
+            ImGui.TextColored(lessonPitch.WaitingForMute ? color : new Vector4(0.53f, 0.94f, 0.76f, 1),
+                lessonPitch.WaitingForMute ? $"Mute to rearm  |  Next: {expected.Name}" : $"Ready  |  Pick {expected.Name}");
+            if (lessonPitch.WaitingForMute && lessonPitch.State is ("wrong" or "uncertain"))
+                ImGui.TextWrapped(lessonPitch.Feedback);
         }
+        else ImGui.TextWrapped(lessonPitch.Feedback);
+
         if (lessonPitch.Sequence is { } run)
         {
-            ImGui.TextUnformatted($"Run for exercise {run.Exercise} (results retained until restart)");
-            ImGui.ProgressBar((float)lessonPitch.Index / run.Notes.Length, new Vector2(-1, 20), $"{lessonPitch.Index}/{run.Notes.Length} targets resolved");
-            var attempts = lessonPitch.Correct + lessonPitch.Wrong;
-            ImGui.TextWrapped($"Matched: {lessonPitch.Correct} | Wrong-pitch attempts: {lessonPitch.Wrong} | Explicit skips: {lessonPitch.Skipped} | Unresolved: {run.Notes.Length - lessonPitch.Index}");
-            ImGui.TextWrapped(attempts == 0 ? "No scored pitch attempts yet." : $"Pitch-attempt accuracy: {100.0 * lessonPitch.Correct / attempts:0.0}% (retries included; skips excluded).");
-            ImGui.TextWrapped($"Unscored uncertain frames: {lessonPitch.UncertainFrames} (frames, not missed picks). No automatic missing-note or timing score.");
-            var first = Math.Max(0, lessonPitch.Index - 2);
-            for (var i = first; i < Math.Min(run.Notes.Length, first + 8); i++)
-                ImGui.TextUnformatted($"{(i == lessonPitch.Index ? ">" : " ")} #{i + 1} {run.Notes[i].Name}: {lessonPitch.Results[i]} | wrong attempts {lessonPitch.Retries[i]}");
+            ImGui.PushStyleColor(ImGuiCol.PlotHistogram, new Vector4(0.15f, 0.43f, 0.39f, 1));
+            ImGui.ProgressBar((float)lessonPitch.Index / run.Notes.Length, new Vector2(-1, 0), $"{lessonPitch.Index}/{run.Notes.Length} targets");
+            ImGui.PopStyleColor();
+            ImGui.TextWrapped($"{lessonPitch.Correct} matched  /  {lessonPitch.Wrong} wrong attempts  /  {lessonPitch.Skipped} skipped");
         }
-        if (latest is null || Now - latest.TimestampMs > 500)
-            ImGui.TextUnformatted("Live input: no recent pitch frame. Check capture.");
-        else
-            DrawLivePitch();
-        ImGui.TextWrapped("Green = matched event; red = wrong pitch; amber = uncertain / interrupted. Labels accompany colors. Silence is not a mistake. Runs stay on screen only; lesson completion remains self-reported. Starting audio or another tool stops this drill.");
+    }
+
+    private void DrawLessonScoreDetails()
+    {
+        if (!ImGui.TreeNode("Score details")) return;
+        var attempts = lessonPitch.Correct + lessonPitch.Wrong;
+        ImGui.TextWrapped(attempts == 0 ? "No scored pitch attempts yet." :
+            $"Pitch-attempt accuracy: {100.0 * lessonPitch.Correct / attempts:0.0}% (skips excluded).");
+        ImGui.TextWrapped($"{lessonPitch.UncertainFrames} unscored frames. Silence is not a mistake; results aren't saved.");
+        ImGui.TreePop();
     }
 }

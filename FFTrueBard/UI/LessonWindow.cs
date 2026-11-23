@@ -116,6 +116,7 @@ public sealed partial class ConfigWindow
                 }
             }
             lessonLibrary = library;
+            tablatureRequest = null;
             LoadLessonCatalog();
             lessonStatus = $"{(saveLessonPaths ? "Saved locations. " : "")}{library.Exercises.Count} exercise/tuning tracks; {library.Rhythm.Count} rhythm tracks. Files remain in place.";
         }
@@ -156,6 +157,8 @@ public sealed partial class ConfigWindow
         ImGui.EndDisabled();
         ImGui.TextWrapped(lessonStatus);
         if (lessonLibrary is null) return;
+        if (lessonLibrary.Tablature is { } tablature)
+            ImGui.TextUnformatted($"Book exercise excerpts: {tablature.Count}/365");
         foreach (var warning in lessonLibrary.Warnings) ImGui.TextWrapped(warning);
         ImGui.TextWrapped($"Resolved PDF: {lessonLibrary.Paths.Pdf}");
         ImGui.TextWrapped($"Exercises: {lessonLibrary.Paths.Exercises}\nRhythm: {lessonLibrary.Paths.Rhythm}");
@@ -188,30 +191,14 @@ public sealed partial class ConfigWindow
 
     private void DrawLessonProgress()
     {
-        var exercise = config.LessonExercise;
-        ImGui.BeginDisabled(LessonNavigationBlocked);
-        if (ImGui.SliderInt("Exercise / day", ref exercise, 1, 365))
-        {
-            SelectLessonExercise(exercise);
-        }
-        if (ImGui.BeginCombo("Week", $"Week {Math.Min(52, (exercise - 1) / 7 + 1)}"))
-        {
-            for (var week = 1; week <= 52; week++)
-                if (ImGui.Selectable($"Week {week}", week == Math.Min(52, (exercise - 1) / 7 + 1)))
-                {
-                    SelectLessonExercise((week - 1) * 7 + 1);
-                }
-            ImGui.EndCombo();
-        }
-        ImGui.EndDisabled();
-        ImGui.Checkbox("Completed (self-reported)", ref lessonCompleted);
-        ImGui.InputTextMultiline("Personal lesson notes", ref lessonNotes, 2000, new Vector2(-1, 65));
+        ImGui.Checkbox("Mark exercise complete", ref lessonCompleted);
+        ImGui.TextUnformatted("Personal notes");
+        ImGui.InputTextMultiline("##personal_notes", ref lessonNotes, 2000, new Vector2(-1, 95));
         if (ImGui.Button("Save progress / notes")) lessonProgress.Save(config.LessonExercise, lessonCompleted, lessonNotes);
         ImGui.SameLine();
         if (ImGui.Button("Discard unsaved lesson edits")) ReadLessonEntry();
         if (LessonDirty) ImGui.TextWrapped("Unsaved edits: save or discard before changing the exercise. Closing/reloading does not save these edits.");
-        ImGui.TextWrapped($"Completed: {lessonProgress.Completed}/365. {lessonProgress.Status}");
-        ImGui.TextWrapped("Completion is self-reported. Optional visual pitch checks below require a reviewed local sequence; rhythm and technique are not graded. The PDF opens in your external viewer.");
+        ImGui.TextWrapped($"{lessonProgress.Completed}/365 self-reported completions. {lessonProgress.Status}");
     }
 
     private void DrawLessonTracks()
@@ -254,7 +241,6 @@ public sealed partial class ConfigWindow
 
     private void DrawLessonPlayback()
     {
-        ImGui.Separator();
         ImGui.TextWrapped(lessonPlayer.Status);
         if (lessonPlayer.Path.Length > 0) ImGui.TextWrapped($"Track: {Path.GetFileName(lessonPlayer.Path)}");
         ImGui.BeginDisabled(!lessonPlayer.Ready);
@@ -275,16 +261,21 @@ public sealed partial class ConfigWindow
         var position = (float)lessonPlayer.Position;
         ImGui.TextUnformatted($"{(lessonPlayer.Playing ? "Playing" : "Paused / stopped")} | {position:0.0} / {lessonPlayer.Duration:0.0} seconds");
         if (ImGui.SliderFloat("Seek (seconds)", ref position, 0, (float)Math.Max(0.1, lessonPlayer.Duration), "%.1f")) lessonPlayer.Seek(position);
-        ImGui.InputFloat("Loop A (seconds)", ref loopA, 1, 10, "%.2f");
-        ImGui.SameLine();
-        if (ImGui.Button("A = current")) loopA = (float)lessonPlayer.Position;
-        ImGui.InputFloat("Loop B (seconds)", ref loopB, 1, 10, "%.2f");
-        ImGui.SameLine();
-        if (ImGui.Button("B = current")) loopB = (float)lessonPlayer.Position;
-        ImGui.Checkbox("Enable A-B loop", ref lessonLoop);
-        if (ImGui.Button("Apply loop boundaries"))
-            lessonStatus = lessonPlayer.SetLoop(loopA, loopB, lessonLoop) ? "Loop settings applied." : "Loop must be within the track, with B at least 0.1 seconds after A.";
-        ImGui.TextUnformatted(lessonPlayer.LoopEnabled ? $"Active loop: {lessonPlayer.LoopA:0.00}–{lessonPlayer.LoopB:0.00} s" : "Loop currently off. Apply after editing.");
+        if (ImGui.TreeNode("A-B loop"))
+        {
+            ImGui.InputFloat("Loop A (seconds)", ref loopA, 1, 10, "%.2f");
+            ImGui.SameLine();
+            if (ImGui.Button("A = current")) loopA = (float)lessonPlayer.Position;
+            ImGui.InputFloat("Loop B (seconds)", ref loopB, 1, 10, "%.2f");
+            ImGui.SameLine();
+            if (ImGui.Button("B = current")) loopB = (float)lessonPlayer.Position;
+            ImGui.Checkbox("Enable A-B loop", ref lessonLoop);
+            if (ImGui.Button("Apply loop boundaries"))
+                lessonStatus = lessonPlayer.SetLoop(loopA, loopB, lessonLoop) ? "Loop settings applied." : "Loop must be within the track, with B at least 0.1 seconds after A.";
+            ImGui.TextUnformatted(lessonPlayer.LoopEnabled ? $"Active loop: {lessonPlayer.LoopA:0.00}–{lessonPlayer.LoopB:0.00} s" : "Loop off. Apply after editing.");
+            if (lessonStatus.StartsWith("Loop", StringComparison.Ordinal)) ImGui.TextWrapped(lessonStatus);
+            ImGui.TreePop();
+        }
         ImGui.EndDisabled();
         var volume = lessonPlayer.Volume;
         if (ImGui.SliderFloat("Lesson playback volume", ref volume, 0, 1, "%.2f"))
@@ -293,18 +284,53 @@ public sealed partial class ConfigWindow
             lessonPlayer.ApplyVolume();
             save();
         }
-        ImGui.TextWrapped("Use headphones and the dry guitar input to avoid detecting the backing track. Playback uses Windows default output; changing output devices may require reloading the track. Closing this window or starting another training tool stops playback.");
+        ImGui.TextDisabled("Use headphones. Playback uses the Windows default output.");
+    }
+
+    private void DrawLessonAudio()
+    {
+        if (SelectedCatalogExercise is { Audio: { } cue } lesson)
+        {
+            ImGui.BeginDisabled(lessonPlayer.Loading || loadingCatalog is not null || lessonLibrary is null);
+            if (ImGui.Button("Load exercise cue"))
+            {
+                try { LoadLessonTrack(cue.ResolveTrack(lessonLibrary!, lesson.Exercise), cue); }
+                catch (Exception e) { catalogStatus = $"Cannot load exercise cue: {e.Message}"; }
+            }
+            ImGui.EndDisabled();
+            ImGui.TextWrapped($"Cue: {cue.StartSeconds:0.##} s to {cue.EndSeconds?.ToString("0.##") ?? "track end"}. " +
+                "No autoplay. Enable A-B looping to repeat this range.");
+        }
+        if (catalogStatus.StartsWith("Cannot load exercise cue", StringComparison.Ordinal) ||
+            catalogStatus.StartsWith("Cue not applied", StringComparison.Ordinal))
+            ImGui.TextWrapped(catalogStatus);
+        if (lessonPlayer.Loading || lessonPlayer.Ready || lessonPlayer.Path.Length > 0) DrawLessonPlayback();
+        if (lessonLibrary is null)
+        {
+            ImGui.TextWrapped("Set your local folders to browse lesson audio.");
+            if (ImGui.Button("Open lesson files")) requestedTab = "Lesson files";
+        }
+        else if (ImGui.CollapsingHeader("Browse exercise and backing tracks", lessonPlayer.Ready ? ImGuiTreeNodeFlags.None : ImGuiTreeNodeFlags.DefaultOpen))
+            DrawLessonTracks();
+    }
+
+    private void DrawLessonFiles()
+    {
+        DrawLessonLocations();
+        DrawCatalogSetup();
     }
 
     private void DrawLessons()
     {
         if (!lessonScanRequested) ScanLessons(false);
-        if (ImGui.CollapsingHeader("Local lesson locations", ImGuiTreeNodeFlags.DefaultOpen)) DrawLessonLocations();
-        DrawLessonCatalog();
-        DrawLessonPitch();
-        if (ImGui.CollapsingHeader("Lesson selection and self-reported progress", ImGuiTreeNodeFlags.DefaultOpen))
-            DrawLessonProgress();
-        DrawLessonTracks();
-        DrawLessonPlayback();
+        DrawExerciseSelector();
+        ImGui.Spacing();
+        if (!ImGui.BeginTabBar("lesson_tools")) return;
+        DrawToolTab("Guide", DrawLessonGuide);
+        DrawToolTab("Tablature", DrawLessonTablature);
+        DrawToolTab("Pitch drill", DrawLessonPitch);
+        DrawToolTab("Audio", DrawLessonAudio);
+        DrawToolTab("Notes", DrawLessonProgress);
+        ImGui.EndTabBar();
     }
 }

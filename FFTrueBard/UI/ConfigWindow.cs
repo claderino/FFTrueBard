@@ -1,5 +1,6 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Plugin.Services;
 using FFTrueBard.Detection;
 using FFTrueBard.Diagnostics;
 using FFTrueBard.Practice;
@@ -13,12 +14,13 @@ public sealed partial class ConfigWindow : IDisposable
     private readonly ChordPractice practice;
     private readonly DebugRecorder recorder;
     private readonly Action save;
+    private readonly ITextureProvider? textures;
     private readonly List<string> recentNotes = [];
     private DetectionFrame? latest;
     private bool visible;
 
     public ConfigWindow(Configuration config, GuitarDetector detector, ChordPractice practice,
-        DebugRecorder recorder, Action save)
+        DebugRecorder recorder, Action save, ITextureProvider? textures = null)
     {
         this.config = config;
         config.Mapping ??= [];
@@ -26,6 +28,7 @@ public sealed partial class ConfigWindow : IDisposable
         this.practice = practice;
         this.recorder = recorder;
         this.save = save;
+        this.textures = textures;
         history = new PracticeHistory(Path.Combine(Path.GetDirectoryName(recorder.DirectoryPath)!, "practice-history.json"));
         var configRoot = Path.GetDirectoryName(recorder.DirectoryPath)!;
         lessonProgress = new Lessons.LessonProgress(Path.Combine(configRoot, "lesson-progress.json"));
@@ -107,8 +110,8 @@ public sealed partial class ConfigWindow : IDisposable
             return;
         if (!ImGui.IsAnyItemActive())
             detectionEditBackedUp = routeEditBackedUp = false;
-        ImGui.SetNextWindowSize(new Vector2(780, 660), ImGuiCond.FirstUseEver);
-        if (!ImGui.Begin("FFTrueBard - Practice & diagnostics", ref visible))
+        ImGui.SetNextWindowSize(new Vector2(740, 590), ImGuiCond.FirstUseEver);
+        if (!ImGui.Begin("FFTrueBard###FFTrueBard - Practice & diagnostics", ref visible))
         {
             ImGui.End();
             if (!visible)
@@ -116,82 +119,95 @@ public sealed partial class ConfigWindow : IDisposable
             return;
         }
 
-        ImGui.TextWrapped(detector.StatusText);
-        if (recoveryStatus.Length > 0)
-            ImGui.TextWrapped(recoveryStatus);
+        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(8, 6) * (ImGui.GetFontSize() / 16f));
         var practiceMode = config.PracticeMode;
-        if (ImGui.Checkbox("Practice mode (blocks mapped game inputs)", ref practiceMode))
+        if (ImGui.Checkbox("Practice mode", ref practiceMode))
         {
             config.PracticeMode = practiceMode;
             StopTools();
             ResetPractice();
             save();
         }
-        ImGui.TextDisabled("Game input injection is not implemented; controller mode currently logs mappings only.");
+        ImGui.SameLine();
+        ImGui.TextDisabled(practiceMode || ToolsExclusive ? "Mapping preview blocked" : "Mapping preview only");
+        if (ImGui.IsItemHovered()) ImGui.SetTooltip("FFTrueBard does not send keyboard or mouse input to the game.");
         if (ToolsExclusive)
         {
-            ImGui.TextUnformatted("Chord checks paused for a training tool.");
-            if (ImGui.Button("Stop tools and resume chord checks"))
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Resume chord checks"))
                 StopTools();
+            if (ImGui.IsItemHovered()) ImGui.SetTooltip("Stops active lesson audio, pitch drills, and other training tools.");
         }
 
-        if (ImGui.BeginTabBar("fftruebard_tabs"))
+        ImGui.Spacing();
+        if (ImGui.BeginTabBar("fftruebard_workspaces"))
         {
-            if (BeginToolTab("Lessons"))
+            if (BeginWorkspace("Lessons"))
             {
                 DrawLessons();
                 ImGui.EndTabItem();
             }
-            if (BeginToolTab("Testing & recovery"))
+            if (BeginWorkspace("Practice"))
             {
-                DrawSupport();
+                if (ImGui.BeginTabBar("practice_tools"))
+                {
+                    DrawToolTab("Chords", DrawPractice);
+                    DrawToolTab("History", DrawHistory);
+                    ImGui.EndTabBar();
+                }
                 ImGui.EndTabItem();
             }
-            if (BeginToolTab("Mappings"))
+            if (BeginWorkspace("Input"))
             {
-                DrawMappings();
+                if (ImGui.BeginTabBar("input_tools"))
+                {
+                    DrawToolTab("Live", DrawInputDashboard);
+                    DrawToolTab("Setup", DrawAudio);
+                    DrawToolTab("Tuner", DrawTuner);
+                    DrawToolTab("Calibration", DrawCalibration);
+                    DrawToolTab("Detection test", DrawDetectionTest);
+                    ImGui.EndTabBar();
+                }
                 ImGui.EndTabItem();
             }
-            if (BeginToolTab("Chord practice"))
+            if (BeginWorkspace("Settings"))
             {
-                DrawPractice();
-                ImGui.EndTabItem();
-            }
-            if (BeginToolTab("Tuner"))
-            {
-                DrawTuner();
-                ImGui.EndTabItem();
-            }
-            if (BeginToolTab("Calibration"))
-            {
-                DrawCalibration();
-                ImGui.EndTabItem();
-            }
-            if (BeginToolTab("Detection test"))
-            {
-                DrawDetectionTest();
-                ImGui.EndTabItem();
-            }
-            if (BeginToolTab("History"))
-            {
-                DrawHistory();
-                ImGui.EndTabItem();
-            }
-            if (BeginToolTab("Audio & tuning"))
-            {
-                DrawAudio();
-                ImGui.EndTabItem();
-            }
-            if (BeginToolTab("Debug log"))
-            {
-                DrawDebug();
+                if (ImGui.BeginTabBar("settings_tools"))
+                {
+                    DrawToolTab("Lesson files", DrawLessonFiles);
+                    DrawToolTab("Mappings", DrawMappings);
+                    DrawToolTab("Testing & recovery", DrawSupport);
+                    DrawToolTab("Debug log", DrawDebug);
+                    ImGui.EndTabBar();
+                }
                 ImGui.EndTabItem();
             }
             ImGui.EndTabBar();
         }
+        ImGui.PopStyleVar();
         ImGui.End();
         if (!visible)
             StopTools();
+    }
+
+    private void DrawToolTab(string label, Action draw)
+    {
+        if (!BeginToolTab(label)) return;
+        ImGui.Spacing();
+        // Keep workspace tabs visible while a long tool page scrolls.
+        if (ImGui.BeginChild($"body_{label}", Vector2.Zero)) draw();
+        ImGui.EndChild();
+        ImGui.EndTabItem();
+    }
+
+    private static bool PrimaryButton(string label)
+    {
+        ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.12f, 0.39f, 0.36f, 1f));
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.17f, 0.48f, 0.44f, 1f));
+        ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.15f, 0.45f, 0.40f, 1f));
+        var pressed = ImGui.Button(label);
+        ImGui.PopStyleColor(3);
+        return pressed;
     }
 
     private bool ChordPicker(string label, ref int index)
@@ -232,22 +248,13 @@ public sealed partial class ConfigWindow : IDisposable
         if (alternate && first == second)
             ImGui.TextWrapped("Choose different chords to alternate. Currently repeating a single shape.");
 
-        var tolerance = config.PracticeCentsTolerance;
-        if (ImGui.SliderFloat("Pitch tolerance (cents)", ref tolerance, 5, 50, "%.0f"))
-        {
-            config.PracticeCentsTolerance = tolerance;
-            save();
-        }
-
         ImGui.Separator();
-        ImGui.TextUnformatted($"Shape: {practice.Chord.Name} - standard E A D G B e tuning, no capo");
-        ImGui.TextWrapped("Hold the chord shape. Pick one prompted string at a time, low to high. " +
-            "Mute ALL strings between picks so the next note can be checked on its own.");
-        ImGui.TextDisabled("Fingers: 1=index, 2=middle, 3=ring, 4=little. 0=open, X=do not play.");
+        ImGui.TextWrapped($"Shape: {practice.Chord.Name}  |  Pick one string at a time and mute between picks.");
+        ImGui.TextWrapped(config.PracticeMode ? practice.Feedback : "Enable Practice mode to check notes.");
 
         if (ImGui.BeginTable("chord_shape", 5, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg))
         {
-            string[] headers = ["String (low to high)", "Fret", "Finger", "Expected note", "Progress"];
+            string[] headers = ["String", "Fret", "Finger", "Note", "Progress"];
             foreach (var header in headers)
                 ImGui.TableSetupColumn(header);
             ImGui.TableHeadersRow();
@@ -255,9 +262,9 @@ public sealed partial class ConfigWindow : IDisposable
             for (var i = 0; i < 6; i++)
             {
                 var fret = practice.Chord.Frets[i];
-                var progress = fret < 0 ? "Skip (muting not graded)" :
+                var progress = fret < 0 ? "Skip" :
                     practice.Complete || i < practice.StringIndex ? "Passed" :
-                    i == practice.StringIndex ? "<-- Play next" : "Waiting";
+                    i == practice.StringIndex ? "Play next" : "Waiting";
                 ImGui.TableNextRow();
                 string[] cells = [strings[i], fret < 0 ? "X" : fret.ToString(),
                     practice.Chord.Fingers[i], practice.Chord.NoteAt(i), progress];
@@ -270,24 +277,45 @@ public sealed partial class ConfigWindow : IDisposable
             ImGui.EndTable();
         }
 
-        ImGui.TextWrapped(config.PracticeMode ? practice.Feedback : "Enable Practice mode to check notes.");
-        if (ToolsExclusive)
-            ImGui.TextWrapped("Chord checks are paused while tuning, calibrating, or running a detection test. Stop that tool to resume.");
+        if (ToolsExclusive) ImGui.TextDisabled("Chord checks paused.");
         if (ImGui.Button("Retry current shape"))
             practice.Retry();
         ImGui.SameLine();
         if (ImGui.Button("Reset session"))
             ResetPractice();
-        ImGui.TextUnformatted($"Checks completed: {practice.CompletedChecks}   Misses: {practice.Mistakes}   " +
-            $"Last guided check: {practice.LastCheckSeconds:0.0} s");
-        ImGui.TextWrapped("Timing includes picking every string and muting; it is not a measurement of a single chord change. " +
-            "This checks expected pitches, not which physical string you used, hand posture, buzzing, or a full strum.");
-        DrawMetronome();
-        DrawLivePitch();
+        ImGui.TextWrapped($"{practice.CompletedChecks} completed  /  {practice.Mistakes} misses  /  Last check {practice.LastCheckSeconds:0.0} s");
+        if (ImGui.CollapsingHeader("Rhythm & metronome") || beats.Running) DrawMetronome();
+        if (ImGui.CollapsingHeader("Pitch options & live reading"))
+        {
+            var tolerance = config.PracticeCentsTolerance;
+            if (ImGui.SliderFloat("Pitch tolerance (cents)", ref tolerance, 5, 50, "%.0f"))
+            {
+                config.PracticeCentsTolerance = tolerance;
+                save();
+            }
+            ImGui.TextWrapped("Standard tuning, no capo. Finger numbers: 1 index, 2 middle, 3 ring, 4 little. " +
+                "0 is open; skip X. The check measures pitch, not fingering, muting, or a full strum.");
+            DrawLivePitch();
+        }
+    }
+
+    private void DrawInputDashboard()
+    {
+        if (detector.IsCapturing)
+            ImGui.TextWrapped($"{detector.ActiveDevice}  |  {detector.SampleRate:N0} Hz  |  Channel {detector.ActiveChannel}");
+        else
+            ImGui.TextWrapped(detector.StatusText);
+        ImGui.Spacing();
+        DrawInputVisualizer();
+        if (!detector.IsCapturing && ImGui.Button("Open input setup"))
+            requestedTab = "Setup";
+        if (ImGui.CollapsingHeader("Capture health & drop counters")) DrawAudioHealth();
     }
 
     private void DrawAudio()
     {
+        ImGui.TextWrapped(detector.StatusText);
+        if (recoveryStatus.Length > 0) ImGui.TextWrapped(recoveryStatus);
         if (ImGui.BeginCombo("Input device", string.IsNullOrWhiteSpace(config.DeviceName) ? "Windows default" : config.DeviceName))
         {
             if (ImGui.Selectable("Windows default (may be a microphone)", config.DeviceName == ""))
@@ -321,7 +349,9 @@ public sealed partial class ConfigWindow : IDisposable
         }
         ImGui.TextWrapped("Use the clean/dry guitar channel (NUX Dry Out). Pick the channel that carries your " +
             "guitar, not game playback. Capture uses the device's native sample rate.");
-        DrawAudioHealth();
+        if (ImGui.CollapsingHeader("Capture health & drop counters")) DrawAudioHealth();
+
+        if (!ImGui.CollapsingHeader("Detection tuning")) return;
 
         var threshold = config.DetectionThreshold;
         var gate = config.RmsGate;
@@ -356,8 +386,6 @@ public sealed partial class ConfigWindow : IDisposable
             "A held note does not auto-repeat. A clear level dip and fresh pick can retrigger it after the minimum interval. " +
             "If a soft repeat is missed, mute for the quiet time. Lesson pitch drills still require muting between attempts.");
         DrawLivePitch();
-        if (ImGui.CollapsingHeader("Live input visualizer", ImGuiTreeNodeFlags.DefaultOpen))
-            DrawInputVisualizer();
     }
 
     private void RestartCapture()

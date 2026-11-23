@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace FFTrueBard.Lessons;
 
-/// <summary>Local, declarative lesson cards. No code, media, or notation is executed or imported.</summary>
+/// <summary>Local, declarative lesson cards. Media and notation stay in user-owned files.</summary>
 public sealed record LessonCatalog(int SchemaVersion, string Title, string Source, LessonExercise[] Exercises)
 {
     public void Validate()
@@ -55,6 +55,7 @@ public sealed record LessonExercise
     public string[] Steps { get; init; } = [];
     public string[] SelfChecks { get; init; } = [];
     public int? PdfPage { get; init; }
+    public LessonTablatureCrop? TablatureCrop { get; init; }
     public string PrintedPage { get; init; } = "";
     public int? MinBpm { get; init; }
     public int? MaxBpm { get; init; }
@@ -76,6 +77,12 @@ public sealed record LessonExercise
                 (Mode != "pitch-order" || !LessonCatalog.IsFileName(PitchSequenceFile, ".notes.json")))
             throw new InvalidDataException($"Invalid lesson card #{Exercise}: check steps, pages, tempo, practice mode, and file references.");
         Audio?.Validate();
+        if (TablatureCrop is { } crop)
+        {
+            if (PdfPage is null)
+                throw new InvalidDataException($"Lesson card #{Exercise}: a tablature crop requires a PDF page.");
+            crop.Validate();
+        }
     }
 
     private static bool Lines(string[]? lines, int count, int length, bool required) =>
@@ -88,6 +95,18 @@ public sealed record LessonExercise
         if (Mode != "pitch-order") return "";
         var name = PitchSequenceFile.Length > 0 ? PitchSequenceFile : $"exercise-{Exercise:000}.notes.json";
         return Path.Combine(Path.GetDirectoryName(LessonLibrary.Normalize(catalogPath))!, name);
+    }
+}
+
+/// <summary>Optional rectangle in page fractions, measured from the top-left.</summary>
+public sealed record LessonTablatureCrop(double X, double Y, double Width, double Height)
+{
+    public void Validate()
+    {
+        if (!double.IsFinite(X) || !double.IsFinite(Y) || !double.IsFinite(Width) ||
+            !double.IsFinite(Height) || X < 0 || Y < 0 || Width < 0.01 || Height < 0.01 ||
+            X + Width > 1 || Y + Height > 1)
+            throw new InvalidDataException("A tablature crop needs positive dimensions and must fit inside the PDF page.");
     }
 }
 

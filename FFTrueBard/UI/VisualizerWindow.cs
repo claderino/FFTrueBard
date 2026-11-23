@@ -107,7 +107,6 @@ public sealed partial class ConfigWindow
 
     private void DrawLessonVisualizer()
     {
-        if (!ImGui.CollapsingHeader("Exercise & input visualizer", ImGuiTreeNodeFlags.DefaultOpen)) return;
         SequenceNote? target = null;
         if (SelectedCatalogExercise?.Mode != "guided" &&
             pitchSequence is { } sequence && sequence.Exercise == config.LessonExercise)
@@ -118,9 +117,7 @@ public sealed partial class ConfigWindow
         }
         else
         {
-            ImGui.TextWrapped(SelectedCatalogExercise?.Mode == "guided"
-                ? "Guided card: use the PDF and lesson steps for the notes. Only live input is shown here."
-                : "No local note sequence loaded for this exercise. Use Pitch targets and setup to load one.");
+            ImGui.TextWrapped("No local note sequence loaded. Open Pitch targets and setup to load one.");
         }
         if (ImGui.TreeNode("Live input graph##lessons"))
         {
@@ -136,17 +133,23 @@ public sealed partial class ConfigWindow
         var lastPage = LessonVisualizerPage.PageAt(sequence.Notes.Length - 1, sequence.Notes.Length, columns);
         if (run?.Running == true) lessonVisualPage = LessonVisualizerPage.PageAt(run.Index, sequence.Notes.Length, columns);
         lessonVisualPage = Math.Clamp(lessonVisualPage, 0, lastPage);
-        ImGui.TextWrapped("Note order, not time. Each tile is one target, including repeated pitches.");
-        ImGui.BeginDisabled(run?.Running == true || lessonVisualPage == 0);
-        if (ImGui.Button("Previous targets")) lessonVisualPage--;
-        ImGui.EndDisabled();
-        ImGui.SameLine();
-        ImGui.BeginDisabled(run?.Running == true || lessonVisualPage >= lastPage);
-        if (ImGui.Button("Next targets")) lessonVisualPage++;
-        ImGui.EndDisabled();
+        if (run?.Running != true && lastPage > 0)
+        {
+            ImGui.BeginDisabled(lessonVisualPage == 0);
+            if (ImGui.ArrowButton("previous_targets", ImGuiDir.Left)) lessonVisualPage--;
+            if (ImGui.IsItemHovered()) ImGui.SetTooltip("Previous targets");
+            ImGui.EndDisabled();
+            ImGui.SameLine();
+            ImGui.BeginDisabled(lessonVisualPage >= lastPage);
+            if (ImGui.ArrowButton("next_targets", ImGuiDir.Right)) lessonVisualPage++;
+            if (ImGui.IsItemHovered()) ImGui.SetTooltip("Next targets");
+            ImGui.EndDisabled();
+            ImGui.SameLine();
+        }
         var first = lessonVisualPage * columns;
         var end = Math.Min(first + columns, sequence.Notes.Length);
-        ImGui.TextUnformatted($"Targets {first + 1}–{end} of {sequence.Notes.Length}");
+        ImGui.TextUnformatted($"Note map  |  Targets {first + 1}–{end} of {sequence.Notes.Length}");
+        if (ImGui.IsItemHovered()) ImGui.SetTooltip("Tiles show note order, not timing. S/F are suggested string and fret.");
         if (!ImGui.BeginTable("lesson_note_map", columns, ImGuiTableFlags.Borders | ImGuiTableFlags.SizingStretchSame))
             return;
         ImGui.TableNextRow();

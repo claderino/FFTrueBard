@@ -18,6 +18,7 @@ public sealed class FFTrueBardPlugin : IDalamudPlugin
     [PluginService] public static IPluginLog Log { get; private set; } = null!;
     [PluginService] public static ICommandManager CommandManager { get; private set; } = null!;
     [PluginService] public static IFramework Framework { get; private set; } = null!;
+    [PluginService] public static ITextureProvider Textures { get; private set; } = null!;
 
     private readonly Configuration config;
     private readonly GuitarDetector detector;
@@ -33,7 +34,7 @@ public sealed class FFTrueBardPlugin : IDalamudPlugin
         practice = new ChordPractice();
         recorder = new DebugRecorder(Path.Combine(PluginInterface.GetPluginConfigDirectory(), "diagnostics"));
         configWindow = new ConfigWindow(config, detector, practice, recorder,
-            () => PluginInterface.SavePluginConfig(config));
+            () => PluginInterface.SavePluginConfig(config), Textures);
 
         // Swap in a real injector implementation when ready (see InputInjector.cs).
         inputInjector = new DummyInputInjector(Log);

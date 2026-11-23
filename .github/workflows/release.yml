@@ -22,7 +22,7 @@ jobs:
       - name: Keep user lesson media out of published source
         shell: pwsh
         run: |
-          $media = git ls-files | Where-Object { $_ -match '(?i)(\.(mp3|wav|pdf)$|\.(notes|course|reference)\.json$)' }
+          $media = git ls-files | Where-Object { $_ -match '(?i)(\.(mp3|wav|pdf)$|\.(notes|course|reference|tablature)\.json$)' }
           if ($media) { throw 'User lesson media, course catalogs, reference annotations, and note transcriptions must not be committed or published.' }
 
       - name: Setup .NET
@@ -57,7 +57,7 @@ jobs:
               Author              = 'claderino'
               Name                = 'FFTrueBard'
               Punchline           = 'Play Final Fantasy XIV with an electric guitar.'
-              Description         = 'Local guided exercise catalogs with lesson steps, self-checks, PDF references, MP3 cues/loops, and optional reviewed pitch-order drills. Bring your own lesson files. Game input injection is not implemented.'
+              Description         = 'Guitar practice with local PDF tablature, guided lesson cards, MP3 cues and loops, and optional pitch-order drills. Bring your own lesson files. Game input injection is not implemented.'
               InternalName        = 'FFTrueBard'
               AssemblyVersion     = $env:VER
               RepoUrl             = "https://github.com/$env:REPO"
@@ -83,7 +83,7 @@ jobs:
             Author                  = 'claderino'
             Name                    = 'FFTrueBard'
             Punchline               = 'Play Final Fantasy XIV with an electric guitar.'
-            Description             = 'Local guided exercise catalogs with lesson steps, self-checks, PDF references, MP3 cues/loops, and optional reviewed pitch-order drills. Bring your own lesson files. Game input injection is not implemented.'
+            Description             = 'Guitar practice with local PDF tablature, guided lesson cards, MP3 cues and loops, and optional pitch-order drills. Bring your own lesson files. Game input injection is not implemented.'
             InternalName            = 'FFTrueBard'
             AssemblyVersion         = $env:VER
             TestingAssemblyVersion  = $env:VER

@@ -30,10 +30,10 @@ available. This is a pull-based update feed, not an immediate remote push.
 Use a clean guitar signal for the most reliable measurements:
 
 1. Connect the NUX Mighty Space over USB and select **Dry Out** routing.
-2. In `/ftruebard`, open **Audio & tuning** and select your input device.
+2. In `/ftruebard`, open **Input → Setup** and select your input device.
 3. Select the interface channel carrying the dry guitar. The status line shows
    the actual channel and native sample rate in use.
-4. Play one note and inspect the live frequency, note, and signal level.
+4. Open **Input → Live**, play one note, and inspect its pitch and signal level.
 
 The initial device search matches `NUX`. A missing device displays a message
 instead of silently switching to your microphone. You can explicitly select
@@ -48,7 +48,7 @@ or downloaded from GitHub. You must provide your own local copies on each PC.
 
 To set up the library:
 
-1. Open `/ftruebard` and select **Lessons → Local lesson locations**.
+1. Open `/ftruebard` and select **Settings → Lesson files**.
 2. Use **Browse** next to **Lesson root folder**, or paste an absolute path.
    For Guitar Aerobics, choose the folder containing the book PDF and the
    `_Exercises` and `_Rhythm` folders.
@@ -72,15 +72,16 @@ and neither lesson media nor progress is automatically attached to exports.
 The player uses the Windows default playback device. Use headphones and the
 clean guitar capture channel so the detector does not hear the backing track.
 
-1. Choose an **Exercise / day** or **Week**, then select **Load selected week's
-   exercise track**. Recognized Guitar Aerobics filenames connect exercises
+1. Choose an exercise and open **Lessons → Audio**. Expand **Browse exercise
+   and backing tracks**, then select **Load selected week's exercise track**.
+   Recognized Guitar Aerobics filenames connect exercises
    1–365 to the weekly MP3s. Unknown filenames and the tuning track remain
    available under **All exercise / tuning tracks**.
 2. Alternatively, expand **Rhythm tracks by style / BPM** and select a track.
    Style and BPM come from filenames; BPM filter `0` lists all tempos.
 3. Select **Play lesson audio**. Use **Pause audio**, **Stop audio**, the seek
    slider, and **Lesson playback volume** as needed.
-4. Set **Loop A** and **Loop B** in seconds, or use **A = current** and
+4. Expand **A-B loop**. Set **Loop A** and **Loop B** in seconds, or use **A = current** and
    **B = current**. Check **Enable A-B loop**, then select **Apply loop
    boundaries**. B must be at least 0.1 seconds after A and inside the track.
    To disable a loop, clear the checkbox and apply again.
@@ -94,15 +95,15 @@ and boundary changes can take about one output buffer to become audible.
 
 Lesson playback pauses chord grading and blocks mapped inputs. Closing the
 plugin window, restarting capture, or starting another training tool stops
-playback. After playback, use **Stop tools and resume chord checks** to resume
+playback. After playback, use **Resume chord checks** to resume
 chord practice. If you change the Windows output device, reload the track.
 
 ### Save lesson progress
 
 Progress is your own assessment, separate from detected-note accuracy.
 
-1. Choose an exercise, mark **Completed (self-reported)** if appropriate, and
-   enter **Personal lesson notes**.
+1. Choose an exercise and open **Lessons → Notes**. Select **Mark exercise
+   complete** if appropriate, and enter **Personal notes**.
 2. Select **Save progress / notes**, or **Discard unsaved lesson edits**.
    Save or discard before changing exercises. Unsaved edits are not saved on
    plugin reload.
@@ -124,25 +125,25 @@ To use a catalog:
 
 1. Save your authored `exercises.course.json` in `fftruebard-lessons` under
    the saved lesson root, or beside the PDF when no root is set.
-2. Open **Lessons** and select **Save locations and scan**. Alternatively,
-   expand **Catalog file and filters**, browse to another local `.course.json`
+2. Open **Settings → Lesson files** and select **Save locations and scan**.
+   Alternatively, expand **Exercise catalog**, browse to another local `.course.json`
    file, and select **Save catalog location and reload**. Reload after
    editing the file.
-3. Select **Catalog exercise**, or use **Previous exercise** and **Next
-   exercise**. Week and technique filters narrow the authored cards listed
-   in the catalog dropdown. The existing exercise/day control still accesses
-   all exercise numbers from 1 to 365.
-4. Expand **Guided lesson card**. Use its PDF reference to find the exercise
-   manually in your external viewer; **Open book for this exercise** opens
-   the configured PDF but does not jump to a page.
-5. Select **Prepare guided practice (no grading)** to pause other training
-   tools and chord scoring. Follow the steps and tick the self-checks based on
-   your observations. Capture does not need to be running for manual practice.
+3. In **Lessons**, use the exercise dropdown or the arrow buttons.
+   **Filter local cards** narrows the list by week or technique.
+   Enter a number and select **Go to exercise** to jump to any of the 365
+   exercise numbers.
+4. Open **Guide** and select **View tablature** to see the exercise's notation
+   from your local PDF.
+5. Select **Prepare guided practice** to pause other training tools and chord
+   scoring. Follow the steps and open **Self-checks** for your own observations.
+   Capture does not need to be running for manual practice.
 6. Save useful observations in your personal notes and choose whether to mark
    the exercise complete. Step position and self-check ticks are not saved;
    they reset on exercise selection, note discard, or catalog reload.
 
-Missing cards are explicitly **PDF-only**, not completed tutorials. A
+Exercises without a guided card can still show an indexed book excerpt and
+play weekly audio; they don't have guided steps or automatic grading. A
 `guided` card disables pitch grading, even if a standalone note-file override
 is set. This supports bending, legato, ringing arpeggios, strummed chords,
 and other exercises without pretending to assess their technique. A
@@ -150,7 +151,7 @@ and other exercises without pretending to assess their technique. A
 after you review its note data. This label does not certify technique
 detection or enable rhythm grading.
 
-For cards with audio cues, select **Load exercise audio cue (no autoplay)**.
+For cards with audio cues, select **Load exercise cue** in **Lessons → Audio**.
 After decoding, the player seeks to the cue start and fills the A/B controls
 without enabling a loop. Press **Play lesson audio** to listen, and explicitly
 enable/apply the loop if wanted. Playback continues beyond the suggested B
@@ -161,6 +162,31 @@ Cue ranges are checked against the decoded track duration. Out-of-range
 values are rejected, not silently clamped. Book timestamps can be approximate;
 listen and adjust them locally. Loading a cue never starts playback or
 changes detector settings.
+
+### Read tablature in the plugin
+
+Open **Lessons → Tablature** to display the notation from your selected local
+PDF. If the card or local book index has an excerpt, the viewer fits it to the
+panel width. Select **Full page** for context or use **Zoom** to enlarge the
+notation and scroll if needed. For an unlinked exercise, enter the PDF page
+number yourself. **Open book externally** is available if the preview can't
+render the PDF or you'd rather read it in your usual viewer.
+
+The plugin renders one view at a time in memory. It doesn't copy or upload
+pages, read notes from the notation, sync the view to audio, or grade what you
+play from it.
+
+A book index can link exercises that don't have guided cards. Put a
+`<book-name>.tablature.json` file beside `<book-name>.pdf`, then rescan in
+**Settings → Lesson files**. The index stores only exercise numbers, one-based
+PDF pages, and crop coordinates. It is validated against the SHA-256 hash of
+the PDF, so changing editions does not silently reuse unrelated coordinates.
+Keep the index with your local PDF; it is not included in the plugin.
+
+An index uses `schemaVersion: 1`, a `pdfSha256` hex string, and an `exercises`
+array. Each entry has `exercise`, `pdfPage`, and `crop` (`x`, `y`, `width`,
+and `height` in page fractions, measured from the top-left). A guided card's
+explicit page and crop take precedence.
 
 ### Local catalog format
 
@@ -183,6 +209,7 @@ illustrates the format without including any Guitar Aerobics lesson content:
       ],
       "selfChecks": ["The intended strings sound cleanly."],
       "pdfPage": 5,
+      "tablatureCrop": { "x": 0.05, "y": 0.5, "width": 0.9, "height": 0.25 },
       "printedPage": "4",
       "minBpm": 40,
       "maxBpm": 80,
@@ -199,7 +226,10 @@ source description to 500. Each card requires a title (up to 200 characters),
 a technique label (100), and 1–20 nonempty steps (1,000 characters each).
 Self-checks are optional, with up to 20 entries of 500 characters each.
 
-PDF page numbers are one-based metadata, not validated against the PDF.
+`pdfPage` uses the PDF viewer's one-based page number. The preview checks it
+against the configured book when it opens. `tablatureCrop` is optional and
+requires `pdfPage`. Its four values are fractions of the page, with `x` and
+`y` measured from the top-left. If omitted, the preview shows the full page.
 `printedPage` can contain a label such as a Roman numeral. Tempo references
 must supply both `minBpm` and `maxBpm`, in ascending order from 20 to 400.
 `rhythmGuide` is optional text of up to 300 characters. None of these fields
@@ -228,16 +258,15 @@ a separate progress history. This release does not change note detection.
 
 ### Check pitch order visually
 
-The **Visual pitch-order drill** checks one note at a time against a local,
+**Lessons → Pitch drill** checks one note at a time against a local,
 reviewed sequence. This pilot is deliberately slow: pick, mute all strings,
-wait for **READY**, then pick again. It does not evaluate rhythm, picking
+wait for **Ready**, then pick again. It does not evaluate rhythm, picking
 direction, fingering, or performance along with the MP3.
 
 To start a drill:
 
-1. Connect your dry guitar input and check **Audio & tuning**.
-2. In **Lessons**, choose the exercise under **Lesson selection and
-   self-reported progress**.
+1. Connect your dry guitar and check the signal in **Input → Live**.
+2. In **Lessons**, choose an exercise and open **Pitch drill**.
 3. Expand **Pitch targets and setup**. Leave **Pitch-sequence file override**
    blank to use a pitch-enabled catalog card's note file. Without a card,
    discovery uses `fftruebard-lessons/exercise-NNN.notes.json` under the saved
@@ -245,13 +274,13 @@ To start a drill:
    Alternatively, browse to a local `.notes.json` file and select
    **Save sequence location and load**. Guided-only cards do not offer this
    pitch drill.
-4. Expand **Review expected sequence** and compare the targets with your
+4. Use the **Note map** or **Review expected sequence** to compare targets with your
    lesson. Check **I reviewed these targets against my lesson**. An exercise
    number mismatch prevents loading; arbitrary local files are not certified
    by the plugin.
-5. Select **Start / restart visual pitch drill**. This stops lesson playback
+5. Select **Start drill**. This stops lesson playback
    and other training tools, pauses chord checks, and blocks mapped inputs.
-6. Mute until **READY**, then pick the **NEXT** note. Mute again after every
+6. Mute until **Ready**, then pick the prompted note. Mute again after every
    scored attempt, even when the next note has a different pitch.
 
 Feedback includes labels as well as colors:
@@ -263,7 +292,7 @@ Feedback includes labels as well as colors:
 - **Amber / uncertain:** input was unclear, clipped, stale, or interrupted.
   Uncertain events do not count as mistakes.
 
-**Skip expected note** explicitly marks a target as unplayed. Silence is not
+**Skip target** explicitly marks a target as unplayed. Silence is not
 automatically treated as a missed note. Capture stops, dropped data, or a
 1.5-second processing stall stop the drill without adding mistakes. Repeated
 pitches cannot be distinguished from one ringing note without muting.
@@ -279,16 +308,16 @@ stops the drill.
 
 ### Visualize the exercise and live input
 
-In **Lessons**, expand **Exercise & input visualizer** to preview the order
-of targets from the loaded local note file. Page through the tiles before
+In **Lessons → Pitch drill**, use the **Note map** to preview the order of
+targets from the loaded local note file. Page through the tiles before
 playing. During a pitch drill, the map follows the current target and labels
 it **Mute** or **Ready**. It also shows matches, skips, and wrong attempts.
 Optional `S` and `F` labels show the suggested string and fret, not what the
 detector identified. Guided cards without pitch grading show the input graph
 only. The map is not synchronized to lesson audio.
 
-Open **Live input graph** within that panel, or **Audio & tuning → Live input
-visualizer**, to see the most recent 120 detector frames. The upper trace shows
+Expand **Live input graph** in **Pitch drill**, or open **Input → Live**,
+to see the most recent 120 detector frames. The upper trace shows
 RMS, the current noise gate, and clipping. The lower trace distinguishes pitch
 estimates, accepted events, and accepted events with fresh-pick evidence.
 Newest frames appear on the right; the graph is not an onset timing
@@ -328,13 +357,13 @@ exercise/index feedback.
 
 ## Prepare for manual testing
 
-The **Testing & recovery** tab groups audio health, a guided checklist, settings
+**Settings → Testing & recovery** groups audio health, a guided checklist, settings
 recovery, and diagnostic export. Test detection and mapping previews, not actual
 FFXIV control: this build still does not send keyboard or mouse events.
 
 ### Check audio health
 
-The health panel is also available under **Audio & tuning**. It shows arriving
+In **Input → Live**, expand **Capture health & drop counters** to see arriving
 audio blocks, sample and processed-frame counts, accepted-note counts, last-frame
 ages, RMS/dBFS, peak level, clipping, and dropped-data counters.
 
@@ -388,8 +417,9 @@ detection settings, not practice history or reports. They force Practice mode
 on. Restoring also backs up the current state, so restoring the newest point
 again can reverse the previous restore; select an older point for older edits.
 
-**Reset detection defaults** under Audio & tuning and **Reset mappings to
-original defaults** under Mappings both require confirmation and a backup.
+**Reset detection defaults** under **Input → Setup → Detection tuning** and
+**Reset mappings to original defaults** under **Settings → Mappings** both
+require confirmation and a backup.
 Detection reset preserves device/channel and bindings. Mapping reset replaces
 all bindings with the original defaults. The latest 20 valid recovery files are
 retained in `settings-backups`; unreadable files are skipped, not overwritten.
@@ -424,7 +454,7 @@ log/report folders are rejected. Export files are not automatically deleted.
 
 ## Edit note mappings
 
-The **Mappings** tab edits saved note-to-key/mouse assignments without rebuilding
+**Settings → Mappings** edits saved note-to-key/mouse assignments without rebuilding
 or editing configuration files. **Bindings are log-only:** this build does not
 send keyboard events or clicks, and it has no tap/hold behaviour yet.
 
@@ -468,11 +498,11 @@ JSONL log records the actual resolution when each new accepted note arrives.
 
 Mappings save in your local Dalamud configuration and survive plugin updates.
 They do not automatically sync between PCs. Note selection pauses chord checks;
-use **Stop tools and resume chord checks** when finished.
+use **Resume chord checks** when finished.
 
 ## Practise chords
 
-The **Chord practice** tab provides Em, Am, C, G, D, E, A, and Dm shapes for
+**Practice → Chords** provides Em, Am, C, G, D, E, A, and Dm shapes for
 standard E A D G B e tuning without a capo.
 
 1. Keep **Practice mode** enabled and choose a chord.
@@ -494,7 +524,7 @@ is correctly muted. Use your ears when strumming after a check.
 
 ## Tune your guitar
 
-The **Tuner** tab provides an open-string tuner with a cents needle. Turn on
+**Input → Tuner** provides an open-string tuner with a cents needle. Turn on
 **Pause chord checks while tuning** to avoid grading tuning notes as practice.
 
 1. Choose **Auto: nearest open string**, or select a string explicitly.
@@ -509,7 +539,7 @@ selection reports octave mistakes rather than treating them as in tune.
 
 ## Calibrate detection
 
-The **Calibration** tab measures your current input without changing settings
+**Input → Calibration** measures your current input without changing settings
 automatically. A working capture device is required to start.
 
 1. Select **Start / restart calibration** and mute every string for five seconds.
@@ -529,7 +559,7 @@ Changing device/channel invalidates an existing calibration suggestion.
 
 ## Run a labelled detection test
 
-The **Detection test** tab compares prompted notes with what the detector
+**Input → Detection test** compares prompted notes with what the detector
 accepts. Select one open string or all six, with one to ten trials per string.
 
 1. Select **Start labelled test**.
@@ -555,8 +585,8 @@ cancel active measurements to avoid mixing different setups in one test.
 
 ## Add rhythm to practice
 
-The bottom of **Chord practice** contains an optional visual metronome and
-rhythm scoring. Select two alternating chords above for a guided change drill.
+Under **Practice → Chords**, expand **Rhythm & metronome** for visual timing
+and rhythm scoring. Select two alternating chords above for a guided change drill.
 
 1. Set a slow tempo, starting around 40 to 60 BPM.
 2. Optionally enable **Audible click** through Windows' default playback device.
@@ -580,7 +610,7 @@ stops the metronome. Without playback hardware, visual practice still works.
 
 ## Review practice history
 
-The **History** tab stores checked-note accuracy, completed checks, chord pairs,
+**Practice → History** stores checked-note accuracy, completed checks, chord pairs,
 and the strings on which mistakes occurred. It saves locally after each checked
 note to `practice-history.json` next to `diagnostics`, retaining the latest 200
 sessions across plugin reloads. Restarting a practice session or changing
@@ -593,13 +623,13 @@ suggestions, not assessments of physical fingering or musical fluency. Existing
 unreadable history is not overwritten; the UI reports the load/save problem.
 
 Tuning, calibration, and labelled tests pause chord grading and block mapped
-inputs. After finishing a tool, use **Stop tools and resume chord checks** to
+inputs. After finishing a tool, use **Resume chord checks** to
 resume. No training reports or history are uploaded.
 
 ## Tune detection live
 
-The **Audio & tuning** sliders apply without rebuilding and save to your local
-Dalamud configuration:
+The sliders under **Input → Setup → Detection tuning** apply without
+rebuilding and save to your local Dalamud configuration:
 
 | Control | Meaning |
 | --- | --- |
@@ -629,7 +659,7 @@ requires muting between attempts; these changes do not add rhythm grading.
 
 ## Record diagnostics
 
-The **Debug log** tab records local JSON Lines files for tuning and reporting
+**Settings → Debug log** records local JSON Lines files for tuning and reporting
 problems. Logging starts off every time the plugin loads.
 
 1. Enable **Record frequency diagnostics to JSONL**.

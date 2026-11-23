@@ -14,6 +14,7 @@ public sealed partial class ConfigWindow
     private int catalogWeek;
     private string catalogTechnique = "";
     private int lessonStep;
+    private int exerciseJump;
     private bool[] lessonSelfChecks = [];
     private LessonAudioCue? queuedLessonCue;
     private LessonExercise? SelectedCatalogExercise => lessonCatalog?.Exercises.FirstOrDefault(e => e.Exercise == config.LessonExercise);
@@ -55,7 +56,7 @@ public sealed partial class ConfigWindow
         try
         {
             lessonCatalog = loadingCatalog.GetAwaiter().GetResult();
-            catalogStatus = $"Loaded {lessonCatalog.Exercises.Length} local lesson cards. Other exercise numbers remain PDF-only until authored.";
+            catalogStatus = $"Loaded {lessonCatalog.Exercises.Length} local guided lesson cards.";
             catalogWeek = 0;
             catalogTechnique = "";
         }
@@ -94,7 +95,7 @@ public sealed partial class ConfigWindow
 
     private void DrawCatalogSetup()
     {
-        if (!ImGui.TreeNode("Catalog file and filters")) return;
+        if (!ImGui.TreeNode("Exercise catalog")) return;
         ImGui.BeginDisabled(LessonNavigationBlocked);
         if (ImGui.InputText("Local exercise catalog override", ref catalogPath, 2048))
             catalogStatus = "Location edited; save and reload to use it.";
@@ -119,96 +120,139 @@ public sealed partial class ConfigWindow
         }
         ImGui.EndDisabled();
         ImGui.TextWrapped("Blank uses fftruebard-lessons/exercises.course.json under the saved lesson root, or beside the PDF. Reload after editing local cards. The plugin does not extract or invent PDF instructions.");
-        if (lessonCatalog is not null)
-        {
-            if (ImGui.BeginCombo("Browse week", catalogWeek == 0 ? "All weeks" : $"Week {catalogWeek}"))
-            {
-                for (var week = 0; week <= 52; week++)
-                    if (ImGui.Selectable(week == 0 ? "All weeks" : $"Week {week}", catalogWeek == week))
-                        catalogWeek = week;
-                ImGui.EndCombo();
-            }
-            if (ImGui.BeginCombo("Browse technique", catalogTechnique.Length == 0 ? "All techniques" : catalogTechnique))
-            {
-                foreach (var technique in new[] { "" }.Concat(lessonCatalog.Exercises.Select(e => e.Technique).Distinct().Order()))
-                    if (ImGui.Selectable(technique.Length == 0 ? "All techniques" : technique, catalogTechnique == technique))
-                        catalogTechnique = technique;
-                ImGui.EndCombo();
-            }
-        }
+        ImGui.TextWrapped(catalogStatus);
+        if (lessonCatalog is { } catalog)
+            ImGui.TextWrapped($"{catalog.Title}\nSource: {catalog.Source}");
         ImGui.TreePop();
     }
 
-    private void DrawLessonCatalog()
+    private void DrawExerciseSelector()
     {
-        ImGui.Separator();
-        ImGui.TextUnformatted("Exercise framework — local guided lessons");
-        ImGui.TextWrapped(catalogStatus);
-        DrawCatalogSetup();
+        var exercise = config.LessonExercise;
+        var lesson = SelectedCatalogExercise;
+        ImGui.TextUnformatted($"Week {Math.Min(52, (exercise - 1) / 7 + 1)}  /  Exercise {exercise}");
         ImGui.BeginDisabled(LessonNavigationBlocked);
-        if (ImGui.Button("Previous exercise")) SelectLessonExercise(config.LessonExercise - 1);
+        ImGui.BeginDisabled(exercise == 1);
+        if (ImGui.ArrowButton("previous_exercise", ImGuiDir.Left)) SelectLessonExercise(exercise - 1);
+        if (ImGui.IsItemHovered()) ImGui.SetTooltip("Previous exercise");
+        ImGui.EndDisabled();
         ImGui.SameLine();
-        if (ImGui.Button("Next exercise")) SelectLessonExercise(config.LessonExercise + 1);
-        if (lessonCatalog is not null && ImGui.BeginCombo("Catalog exercise", $"#{config.LessonExercise}: {SelectedCatalogExercise?.Title ?? "PDF-only (no card)"}"))
+        ImGui.BeginDisabled(exercise == 365);
+        if (ImGui.ArrowButton("next_exercise", ImGuiDir.Right)) SelectLessonExercise(exercise + 1);
+        if (ImGui.IsItemHovered()) ImGui.SetTooltip("Next exercise");
+        ImGui.EndDisabled();
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(Math.Clamp(ImGui.GetContentRegionAvail().X, 1, ImGui.GetFontSize() * 29));
+        if (ImGui.BeginCombo("##exercise_picker", lesson?.Title ?? "Browse exercises"))
         {
-            var cards = lessonCatalog.Filter(catalogWeek, catalogTechnique).ToArray();
-            if (cards.Length == 0) ImGui.TextUnformatted("No authored cards match these filters.");
-            foreach (var card in cards)
-                if (ImGui.Selectable($"#{card.Exercise} — {card.Title}##catalog_{card.Exercise}", config.LessonExercise == card.Exercise))
-                    SelectLessonExercise(card.Exercise);
+            if (ImGui.IsWindowAppearing()) exerciseJump = exercise;
+            ImGui.SetNextItemWidth(ImGui.GetFontSize() * 7);
+            ImGui.InputInt("##exercise_jump", ref exerciseJump, 0);
+            ImGui.SameLine();
+            ImGui.BeginDisabled(exerciseJump is < 1 or > 365);
+            if (ImGui.Button("Go to exercise"))
+            {
+                SelectLessonExercise(exerciseJump);
+                ImGui.CloseCurrentPopup();
+            }
+            ImGui.EndDisabled();
+            if (ImGui.BeginCombo("Jump to week", $"Week {Math.Min(52, (exercise - 1) / 7 + 1)}"))
+            {
+                for (var week = 1; week <= 52; week++)
+                    if (ImGui.Selectable($"Week {week}")) SelectLessonExercise((week - 1) * 7 + 1);
+                ImGui.EndCombo();
+            }
+            if (lessonCatalog is not null)
+            {
+                if (ImGui.TreeNode("Filter local cards"))
+                {
+                    if (ImGui.BeginCombo("Week", catalogWeek == 0 ? "All weeks" : $"Week {catalogWeek}"))
+                    {
+                        for (var week = 0; week <= 52; week++)
+                            if (ImGui.Selectable(week == 0 ? "All weeks" : $"Week {week}", catalogWeek == week))
+                                catalogWeek = week;
+                        ImGui.EndCombo();
+                    }
+                    if (ImGui.BeginCombo("Technique", catalogTechnique.Length == 0 ? "All techniques" : catalogTechnique))
+                    {
+                        foreach (var technique in new[] { "" }.Concat(lessonCatalog.Exercises.Select(e => e.Technique).Distinct().Order()))
+                            if (ImGui.Selectable(technique.Length == 0 ? "All techniques" : technique, catalogTechnique == technique))
+                                catalogTechnique = technique;
+                        ImGui.EndCombo();
+                    }
+                    ImGui.TreePop();
+                }
+                var cards = lessonCatalog.Filter(catalogWeek, catalogTechnique).ToArray();
+                if (cards.Length == 0) ImGui.TextUnformatted("No authored cards match these filters.");
+                foreach (var card in cards)
+                    if (ImGui.Selectable($"#{card.Exercise} — {card.Title}##catalog_{card.Exercise}", exercise == card.Exercise))
+                        SelectLessonExercise(card.Exercise);
+            }
             ImGui.EndCombo();
         }
         ImGui.EndDisabled();
-        if (LessonDirty) ImGui.TextWrapped("Save or discard personal notes below before changing exercise or catalog.");
+        if (LessonDirty)
+        {
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Unsaved notes")) requestedTab = "Notes";
+        }
+    }
+
+    private void DrawLessonGuide()
+    {
         var lesson = SelectedCatalogExercise;
         if (lesson is null)
         {
-            ImGui.TextWrapped($"Exercise {config.LessonExercise}: no guided card authored. Use your PDF and weekly audio; this is not an implemented tutorial.");
+            ImGui.TextWrapped("No guided steps for this exercise. Use the book and weekly audio to practise at your own pace.");
+            if (lessonLibrary?.Tablature?.Find(config.LessonExercise) is not null)
+            {
+                if (PrimaryButton("View book exercise")) requestedTab = "Tablature";
+                ImGui.SameLine();
+                if (ImGui.Button("Open weekly audio")) requestedTab = "Audio";
+                return;
+            }
+            if (ImGui.Button("Open lesson book")) OpenLessonPdf();
+            ImGui.SameLine();
+            if (ImGui.Button("Lesson files")) requestedTab = "Lesson files";
+            if (lessonStatus.Length > 0) ImGui.TextWrapped(lessonStatus);
+            if (catalogStatus.Length > 0) ImGui.TextWrapped(catalogStatus);
             return;
         }
-        ImGui.TextColored(new Vector4(0.65f, 0.85f, 1, 1), $"WEEK {lesson.Week} / EXERCISE {lesson.Exercise}");
-        ImGui.TextWrapped($"{lesson.Title} | {lesson.Technique}");
-        if (!ImGui.CollapsingHeader("Guided lesson card", ImGuiTreeNodeFlags.DefaultOpen)) return;
-        ImGui.TextWrapped($"Catalog: {lessonCatalog!.Title}\nSource supplied by local catalog: {lessonCatalog.Source}");
-        ImGui.TextUnformatted(lesson.Mode == "guided" ? "GUIDED / SELF-ASSESSED — automatic grading unavailable for this card." :
-            "OPTIONAL PITCH-ORDER PILOT — only reviewed single-note targets; technique and rhythm are self-assessed.");
-        if (lesson.PdfPage is not null || lesson.PrintedPage.Length > 0)
-            ImGui.TextWrapped($"Book reference: PDF page {lesson.PdfPage?.ToString() ?? "(unspecified)"}; printed page {lesson.PrintedPage}. Open the book and go to this page manually.");
-        if (ImGui.Button("Open book for this exercise")) OpenLessonPdf();
-        if (lesson.MinBpm is not null)
-            ImGui.TextUnformatted($"Book tempo reference: {lesson.MinBpm}–{lesson.MaxBpm} BPM (not an assessed speed).");
-        if (lesson.RhythmGuide.Length > 0) ImGui.TextWrapped($"Rhythm reference: {lesson.RhythmGuide}");
-
-        ImGui.BeginDisabled(lessonPlayer.Loading || loadingCatalog is not null || lessonLibrary is null);
-        if (lesson.Audio is { } cue)
-        {
-            ImGui.TextWrapped($"Cue start: {cue.StartSeconds:0.##} s; suggested A/B end: {cue.EndSeconds?.ToString("0.##") ?? "track end"}. Book timestamps can be approximate; listen and adjust. Playback continues past B unless you enable looping or stop it.");
-            if (ImGui.Button("Load exercise audio cue (no autoplay)"))
-            {
-                try { LoadLessonTrack(cue.ResolveTrack(lessonLibrary!, lesson.Exercise), cue); }
-                catch (Exception e) { catalogStatus = $"Cannot load exercise cue: {e.Message}"; }
-            }
-        }
-        ImGui.EndDisabled();
-        if (ImGui.Button("Prepare guided practice (no grading)")) EnterTool();
-        ImGui.TextWrapped($"Step {lessonStep + 1}/{lesson.Steps.Length}: {lesson.Steps[lessonStep]}");
+        ImGui.TextColored(new Vector4(0.62f, 0.85f, 0.80f, 1), lesson.Technique);
+        ImGui.SameLine();
+        ImGui.TextDisabled(lesson.Mode == "guided" ? "Self-assessed" : "Optional pitch drill");
+        ImGui.Spacing();
+        ImGui.TextColored(new Vector4(0.62f, 0.85f, 0.80f, 1), $"Step {lessonStep + 1} of {lesson.Steps.Length}");
+        ImGui.TextWrapped(lesson.Steps[lessonStep]);
         ImGui.BeginDisabled(lessonStep == 0);
         if (ImGui.Button("Previous step")) lessonStep--;
         ImGui.EndDisabled();
         ImGui.SameLine();
         ImGui.BeginDisabled(lessonStep + 1 >= lesson.Steps.Length);
-        if (ImGui.Button("Next step")) lessonStep++;
+        if (PrimaryButton("Next step")) lessonStep++;
         ImGui.EndDisabled();
-        if (lesson.SelfChecks.Length > 0)
+        ImGui.Spacing();
+        ImGui.Separator();
+        if (ImGui.Button("View tablature")) requestedTab = "Tablature";
+        ImGui.SameLine();
+        if (ImGui.Button("Prepare guided practice")) EnterTool();
+        if (ImGui.IsItemHovered()) ImGui.SetTooltip("Pause chord checks and practice this guide without grading.");
+        if (lesson.SelfChecks.Length > 0 && ImGui.CollapsingHeader($"Self-checks ({lessonSelfChecks.Count(n => n)}/{lessonSelfChecks.Length})###lesson_checks"))
         {
-            ImGui.TextUnformatted("Self-checks (your observations, not detector results)");
             for (var i = 0; i < lesson.SelfChecks.Length; i++)
             {
                 ImGui.Checkbox($"##lesson_selfcheck_{i}", ref lessonSelfChecks[i]);
                 ImGui.SameLine();
                 ImGui.TextWrapped(lesson.SelfChecks[i]);
             }
+            ImGui.TextDisabled("These checkmarks last for this session.");
         }
-        ImGui.TextWrapped("Steps and checkmarks are session-only. Save observations in personal notes below; completion is always your choice. Following a manual card does not require audio capture.");
+        if (ImGui.CollapsingHeader("Book and rhythm references"))
+        {
+            if (lesson.PdfPage is not null || lesson.PrintedPage.Length > 0)
+                ImGui.TextWrapped($"PDF page: {lesson.PdfPage?.ToString() ?? "(unspecified)"} | Printed page: {lesson.PrintedPage}");
+            if (lesson.MinBpm is not null) ImGui.TextUnformatted($"Book tempo: {lesson.MinBpm}–{lesson.MaxBpm} BPM");
+            if (lesson.RhythmGuide.Length > 0) ImGui.TextWrapped(lesson.RhythmGuide);
+        }
     }
 }

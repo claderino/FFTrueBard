@@ -19,4 +19,5 @@ venv/
 *.pdf
 *.notes.json
 *.course.json
+*.tablature.json
 *.reference.json

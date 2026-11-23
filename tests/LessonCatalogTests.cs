@@ -6,12 +6,14 @@ internal static class LessonCatalogTests
 {
     public static void Run(Action<bool, string> check)
     {
+        LessonTablatureIndexTests.Run(check);
         // Independent lesson content; course-derived cards are never committed.
         var card = new LessonExercise
         {
             Exercise = 1, Title = "Controlled practice", Technique = "Picking",
             Steps = ["Read your notation.", "Listen and practise slowly."],
             SelfChecks = ["My own observation."], PdfPage = 5, PrintedPage = "iv",
+            TablatureCrop = new(.05, .5, .9, .25),
             MinBpm = 40, MaxBpm = 80, Audio = new("", 2, 8),
         };
         var catalog = new LessonCatalog(1, "Personal course", "Independently authored test content",
@@ -32,6 +34,11 @@ internal static class LessonCatalogTests
             card with { Steps = [new string('a', 1001)] }, card with { SelfChecks = null! },
             card with { SelfChecks = [new string('a', 501)] }, card with { PdfPage = 0 },
             card with { PdfPage = 10001 }, card with { PrintedPage = new string('a', 41) },
+            card with { PdfPage = null }, card with { TablatureCrop = new(-.01, 0, .5, .5) },
+            card with { TablatureCrop = new(0, .8, .5, .3) },
+            card with { TablatureCrop = new(.8, 0, .3, .5) },
+            card with { TablatureCrop = new(0, 0, 0, .5) },
+            card with { TablatureCrop = new(0, 0, .5, double.NaN) },
             card with { MinBpm = 80, MaxBpm = 40 }, card with { MinBpm = null },
             card with { MinBpm = 19 }, card with { MaxBpm = 401 },
             card with { Mode = "automatic-chord" }, card with { Mode = null! },
@@ -116,6 +123,7 @@ internal static class LessonCatalogTests
             File.WriteAllText(path, original);
             var loaded = LessonCatalog.Load(path);
             check(loaded.Exercises.Length == 3 && loaded.Exercises[0].Steps.Length == 2, "Local card content and checklist load with camel-case keys");
+            check(loaded.Exercises[0].TablatureCrop == card.TablatureCrop, "Optional tablature excerpt loads from normalized page coordinates");
             check(File.ReadAllText(path) == original, "Catalog loading never modifies local source");
             var noteCard = card with { Mode = "pitch-order", PitchSequenceFile = "my-phrase.notes.json" };
             check(noteCard.SequencePath(path) == Path.Combine(directory, "my-phrase.notes.json"), "Note data resolves beside portable catalog file");
