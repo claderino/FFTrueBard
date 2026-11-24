@@ -11,14 +11,16 @@ public sealed partial class ConfigWindow
     private sealed record TablatureRequest(string Path, int Page, LessonTablatureCrop? Crop,
         LessonTablatureCrop? AudioCrop, LessonTablatureEntry? NextAudio, string? PlayheadTrack);
     private sealed record LoadedTablature(IDalamudTextureWrap Texture, int? AudioSeconds, int? NextAudioSeconds,
-        LessonScorePlayhead? Playhead);
+        LessonTabStaff? TabStaff, LessonScorePlayhead? Playhead, string? PlayheadProblem);
 
     private TablatureRequest? tablatureRequest;
     private Task<LoadedTablature>? tablatureLoad;
     private IDalamudTextureWrap? tablatureTexture;
     private int? tablatureAudioSeconds;
     private int? tablatureNextAudioSeconds;
+    private LessonTabStaff? tablatureStaff;
     private LessonScorePlayhead? tablaturePlayhead;
+    private string? tablaturePlayheadProblem;
     private string tablatureError = "";
     private bool tablatureNeedsLoad;
     private bool tablatureFullPage;
@@ -124,7 +126,11 @@ public sealed partial class ConfigWindow
             tablatureTexture = null;
             tablatureAudioSeconds = null;
             tablatureNextAudioSeconds = null;
+            tablatureStaff = null;
             tablaturePlayhead = null;
+            tablaturePlayheadProblem = null;
+            readerScrubAudio = null;
+            readerRevealedStaff = false;
             tablatureRequest = request;
             tablatureError = "";
             tablatureNeedsLoad = true;
@@ -204,7 +210,9 @@ public sealed partial class ConfigWindow
                     tablatureTexture = loaded.Texture;
                     tablatureAudioSeconds = loaded.AudioSeconds;
                     tablatureNextAudioSeconds = loaded.NextAudioSeconds;
+                    tablatureStaff = loaded.TabStaff;
                     tablaturePlayhead = loaded.Playhead;
+                    tablaturePlayheadProblem = loaded.PlayheadProblem;
                 }
             }
             catch (Exception e)
@@ -226,12 +234,12 @@ public sealed partial class ConfigWindow
         tablatureLoad = Task.Run(async () =>
         {
             var image = LessonPdfRenderer.Render(pluginDirectory, request.Path, request.Page, request.Crop, request.AudioCrop, request.NextAudio);
-            var playhead = request.PlayheadTrack is { } track && image.AudioSeconds is { } start
-                ? LessonScorePlayhead.TryLoad(LessonScorePlayhead.DefaultPath(root, request.Path, exercise),
-                    exercise, request.Page, track, start, image.NextAudioSeconds) : null;
+            var (playhead, problem) = request.PlayheadTrack is { } track && image.AudioSeconds is { } start
+                ? LessonScorePlayhead.FindLocal(root, request.Path, exercise, request.Page, track, start, image.NextAudioSeconds)
+                : (null, null);
             var texture = await provider.CreateFromRawAsync(RawImageSpecification.Bgra32(image.Width, image.Height), image.Pixels,
                 "FFTrueBard tablature").ConfigureAwait(false);
-            return new LoadedTablature(texture, image.AudioSeconds, image.NextAudioSeconds, playhead);
+            return new LoadedTablature(texture, image.AudioSeconds, image.NextAudioSeconds, image.TabStaff, playhead, problem);
         });
     }
 

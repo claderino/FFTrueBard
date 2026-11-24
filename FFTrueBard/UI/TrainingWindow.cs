@@ -88,6 +88,7 @@ public sealed partial class ConfigWindow
     {
         queuedLessonCue = null;
         activeReaderAudio = null;
+        readerScrubAudio = null;
         readerAudioError = "";
         lessonPlayer.Stop();
         lessonDialogs.Reset();

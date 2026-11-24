@@ -174,12 +174,13 @@ opens your usual PDF viewer.
 For the supported Guitar Aerobics PDF, click the printed speaker or timestamp
 to play only that exercise. The reader uses the next printed timestamp (or
 the end of the weekly MP3) to stop playback without splitting the file. Click
-the speaker again to pause or resume. The progress line is on the score.
+the speaker again to pause or resume. After the audio loads, click or drag
+across the TAB strings to move the vertical playhead and seek in the exercise.
 
-The reader highlights individual fret numbers only where you have a reviewed
-local `exercise-NNN.playhead.json` in `fftruebard-lessons`. The playhead file
-matches the selected audio by hash. Exercises without a match show progress
-without highlighting notes.
+The playhead follows the written notes when a reviewed local
+`exercise-NNN.playhead.json` in `fftruebard-lessons` matches the MP3. If there
+is no match, the playhead still seeks but represents elapsed audio time rather
+than the exact note. Hover over the playhead label below the score to see why.
 
 The plugin renders one view at a time in memory. It doesn't copy or upload
 pages, infer note timing from the notation, or grade what you play from it.

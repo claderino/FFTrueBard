@@ -52,12 +52,14 @@ if (args.Length > 1)
             hasInk = image.Pixels[i + 1] < 128;
         Check(hasInk, $"Exercise {exercise} is not blank");
         Check(image.AudioSeconds is not null, $"Exercise {exercise} has a readable printed audio cue");
+        Check(image.TabStaff is { } staff && staff.Right > staff.Left && staff.Bottom > staff.Top,
+            $"Exercise {exercise} has one TAB row for the playhead");
         if (next is not null)
             Check(image.NextAudioSeconds > image.AudioSeconds, $"Exercise {exercise} ends at the next printed cue");
         if (exercise <= 3)
             Check(image.AudioSeconds == new[] { 0, 11, 23 }[exercise - 1], $"Exercise {exercise} has the expected cue");
     }
-    Console.WriteLine("Rendered and read audio markers for all 365 indexed excerpts with no sidecar.");
+    Console.WriteLine("Rendered and located audio markers and TAB rows for all 365 indexed excerpts with no sidecar.");
 }
 
 static void Check(bool condition, string message)

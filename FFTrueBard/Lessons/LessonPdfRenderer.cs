@@ -10,7 +10,8 @@ internal static class LessonPdfRenderer
     private const int Bgra = 4;
     private static readonly object RenderLock = new();
 
-    internal sealed record Image(int Width, int Height, byte[] Pixels, int? AudioSeconds, int? NextAudioSeconds = null);
+    internal sealed record Image(int Width, int Height, byte[] Pixels, int? AudioSeconds, int? NextAudioSeconds = null,
+        LessonTabStaff? TabStaff = null);
 
     public static unsafe Image Render(string pluginDirectory, string path, int pageNumber, LessonTablatureCrop? crop,
         LessonTablatureCrop? audioCrop = null, LessonTablatureEntry? nextAudio = null)
@@ -123,7 +124,46 @@ internal static class LessonPdfRenderer
             finally { destroy(bitmap); }
         }
         var seconds = audioCrop is null ? null : ReadPrintedAudio(library, page, audioCrop);
-        return new(width, height, pixels, seconds);
+        var staff = audioCrop is null ? null : ReadTabStaff(library, page, audioCrop);
+        return new(width, height, pixels, seconds, TabStaff: staff);
+    }
+
+    private static unsafe LessonTabStaff? ReadTabStaff(nint library, nint page, LessonTablatureCrop crop)
+    {
+        nint Export(string symbol) => NativeLibrary.GetExport(library, symbol);
+        var count = (delegate* unmanaged<nint, int>)Export("FPDFPage_CountObjects");
+        var get = (delegate* unmanaged<nint, int, nint>)Export("FPDFPage_GetObject");
+        var type = (delegate* unmanaged<nint, int>)Export("FPDFPageObj_GetType");
+        var segments = (delegate* unmanaged<nint, int>)Export("FPDFPath_CountSegments");
+        var bounds = (delegate* unmanaged<nint, float*, float*, float*, float*, int>)Export("FPDFPageObj_GetBounds");
+        var project = (delegate* unmanaged<nint, int, int, int, int, int, double, double, int*, int*, int>)
+            Export("FPDF_PageToDevice");
+        const int grid = 100_000;
+        const int pathObject = 2;
+        LessonTabStaff? result = null;
+        var total = count(page);
+        for (var i = 0; i < total; i++)
+        {
+            var item = get(page, i);
+            // Known book geometry: the TAB staff is a single path, with one
+            // move/line pair per string. The notation above it has five pairs.
+            if (item == 0 || type(item) != pathObject || segments(item) != 12) continue;
+            float left, bottom, right, top;
+            if (bounds(item, &left, &bottom, &right, &top) == 0 ||
+                right - left < 400 || top - bottom is <= 8 or >= 55)
+                continue;
+            int x0, y0, x1, y1;
+            if (project(page, 0, 0, grid, grid, 0, left, top, &x0, &y0) == 0 ||
+                project(page, 0, 0, grid, grid, 0, right, bottom, &x1, &y1) == 0)
+                continue;
+            var row = new LessonTabStaff((double)x0 / grid, (double)y0 / grid, (double)x1 / grid, (double)y1 / grid);
+            if (row.Left <= crop.X || row.Right >= crop.X + crop.Width ||
+                row.Top <= crop.Y || row.Bottom >= crop.Y + crop.Height)
+                continue;
+            if (result is not null) return null; // Don't guess which line set to use.
+            result = row;
+        }
+        return result;
     }
 
     private static unsafe int? ReadPrintedAudio(nint library, nint page, LessonTablatureCrop crop)

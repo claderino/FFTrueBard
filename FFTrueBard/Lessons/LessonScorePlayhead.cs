@@ -46,6 +46,31 @@ internal sealed record LessonScorePlayhead(int SchemaVersion, int Exercise, int 
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException) { return null; }
     }
 
+    public static (LessonScorePlayhead? Map, string? Problem) FindLocal(
+        string root, string pdf, int exercise, int page, string track, double start, int? end)
+    {
+        var audioFolder = Path.GetDirectoryName(track);
+        var audioParent = Path.GetDirectoryName(audioFolder);
+        string[] candidates =
+        [
+            DefaultPath(root, pdf, exercise),
+            DefaultPath("", pdf, exercise),
+            DefaultPath(audioParent ?? "", pdf, exercise),
+            DefaultPath(audioFolder ?? "", pdf, exercise),
+        ];
+        var foundFile = false;
+        foreach (var path in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (!File.Exists(path)) continue;
+            foundFile = true;
+            if (TryLoad(path, exercise, page, track, start, end) is { } map)
+                return (map, null);
+        }
+        return (null, foundFile
+            ? "Local note timings couldn't be used. Check that they match this exercise and MP3."
+            : $"No reviewed exercise-{exercise:000}.playhead.json found in fftruebard-lessons.");
+    }
+
     public LessonScoreMark? At(double seconds) =>
         Notes.FirstOrDefault(note => note.Start <= seconds && seconds < note.End);
 }

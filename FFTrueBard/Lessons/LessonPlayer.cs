@@ -13,6 +13,8 @@ public sealed class LessonPlayer : IDisposable
     private bool disposed;
     private double positionAnchor;
     private long outputAnchor;
+    private volatile bool outputStopped = true;
+    private (double Seconds, bool Resume)? audibleSeek;
     public string Path { get; private set; } = "";
     public string Status { get; private set; } = "Select an MP3 track to load.";
     public bool Loading => loading is not null;
@@ -26,6 +28,7 @@ public sealed class LessonPlayer : IDisposable
     {
         get
         {
+            if (audibleSeek is { } seek) return seek.Seconds;
             if (stream is null || output is null || output.PlaybackState == PlaybackState.Stopped) return Position;
             try
             {
@@ -60,6 +63,12 @@ public sealed class LessonPlayer : IDisposable
 
     public void Update()
     {
+        if (audibleSeek is { } seek && outputStopped)
+        {
+            audibleSeek = null;
+            Seek(seek.Seconds);
+            if (seek.Resume && Position < (stream?.ClipEnd ?? Duration) - .01) Play();
+        }
         if (loading?.IsCompleted != true) return;
         try
         {
@@ -68,6 +77,7 @@ public sealed class LessonPlayer : IDisposable
             stream = new LoopingLessonStream(reader);
             output = new WaveOutEvent { DesiredLatency = 100, NumberOfBuffers = 2 };
             output.Init(stream);
+            output.PlaybackStopped += OnPlaybackStopped;
             output.Volume = Math.Clamp(Volume, 0, 1);
             Status = "Loaded. Playback uses the Windows default output. Press Play when ready.";
         }
@@ -77,24 +87,36 @@ public sealed class LessonPlayer : IDisposable
 
     public void Play()
     {
+        if (audibleSeek is { } seek)
+        {
+            audibleSeek = (seek.Seconds, true);
+            return;
+        }
         if (output is null || stream is null) return;
         try
         {
             if (output.PlaybackState == PlaybackState.Stopped && Position >= (stream.ClipEnd ?? Duration) - 0.01)
                 Seek(LoopEnabled ? LoopA : stream.ClipStart ?? 0);
             output.Volume = Math.Clamp(Volume, 0, 1);
+            outputStopped = false;
             output.Play();
         }
-        catch (Exception e) { Status = $"Could not play: {e.Message}"; }
+        catch (Exception e)
+        {
+            outputStopped = output.PlaybackState == PlaybackState.Stopped;
+            Status = $"Could not play: {e.Message}";
+        }
     }
 
     public void Pause()
     {
+        if (audibleSeek is { } seek) audibleSeek = (seek.Seconds, false);
         try { output?.Pause(); }
         catch (Exception e) { Status = $"Could not pause audio: {e.Message}"; }
     }
     public void Stop()
     {
+        audibleSeek = null;
         discardLoad = true;
         if (Loading) Status = "Cancelling track load...";
         try
@@ -103,6 +125,38 @@ public sealed class LessonPlayer : IDisposable
             Seek(stream?.ClipStart ?? 0);
         }
         catch (Exception e) { Status = $"Could not stop audio: {e.Message}. Reload the track or check the output device."; }
+    }
+
+    // Restart only after WaveOut has acknowledged its stop. This clears queued audio
+    // from before the scrub instead of showing a new fret while the old buffer plays.
+    public void SeekFromScore(double seconds)
+    {
+        if (stream is null || output is null || stream.ClipStart is not { } start ||
+            stream.ClipEnd is not { } end || !double.IsFinite(seconds))
+            return;
+        var resume = audibleSeek?.Resume ?? Playing;
+        seconds = Math.Clamp(seconds, start, end);
+        if (outputStopped)
+        {
+            if (audibleSeek is null) Seek(seconds);
+            else audibleSeek = (seconds, resume);
+            return;
+        }
+
+        var stop = audibleSeek is null;
+        audibleSeek = (seconds, resume);
+        if (!stop) return;
+        try { output.Stop(); }
+        catch (Exception e)
+        {
+            audibleSeek = null;
+            Status = $"Could not seek: {e.Message}";
+        }
+    }
+
+    private void OnPlaybackStopped(object? sender, StoppedEventArgs e)
+    {
+        if (ReferenceEquals(sender, output)) outputStopped = true;
     }
     public void Seek(double seconds)
     {
@@ -120,8 +174,15 @@ public sealed class LessonPlayer : IDisposable
 
     private void Unload()
     {
-        output?.Dispose();
+        audibleSeek = null;
+        var old = output;
         output = null;
+        if (old is not null)
+        {
+            old.PlaybackStopped -= OnPlaybackStopped;
+            old.Dispose();
+        }
+        outputStopped = true;
         stream?.Dispose();
         stream = null;
     }

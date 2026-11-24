@@ -116,6 +116,21 @@ internal static class LessonTests
             check(loop.SetLoop(0, 1, false) && loop.ClipEnd is null, "Manual audio controls can restore full-track playback");
         }
 
+        static bool Near(double a, double b) => Math.Abs(a - b) < .000001;
+        var scoreRow = new LessonTabStaff(.1, .4, .9, .5);
+        var mapFixture = new LessonScorePlayhead(1, 1, 1, true, "", [
+            new(3, 4, .2, .4, .02, .03), new(5, 6, .6, .4, .02, .03),
+        ]);
+        var scoreCursor = new LessonScoreCursor(scoreRow, 2, 10, mapFixture);
+        check(Near(scoreCursor.XAt(3), .21) && Near(scoreCursor.TimeAt(.61), 5),
+            "The cursor crosses the reviewed fret at its onset and dragging back to that fret seeks to the onset");
+        check(Enumerable.Range(2, 9).All(s => Near(scoreCursor.TimeAt(scoreCursor.XAt(s)), s)),
+            "The score time-to-position and position-to-time mappings round-trip across the clip");
+        var withoutMap = new LessonScoreCursor(scoreRow, 2, 10, null);
+        check(Near(withoutMap.TimeAt(withoutMap.XAt(6)), 6) && Near(withoutMap.TimeAt(2), 10) &&
+            !LessonScoreCursor.MatchesStaff(scoreRow, mapFixture with { Notes = [mapFixture.Notes[1], mapFixture.Notes[0]] }, 2, 10),
+            "Unreviewed or invalid maps fall back to bounded audio-time seeking");
+
         // Optional, read-only integration check against a user-selected local library.
         var local = Environment.GetEnvironmentVariable("FFTRUEBARD_LESSON_TEST_ROOT");
         if (!string.IsNullOrWhiteSpace(local))
@@ -138,6 +153,8 @@ internal static class LessonTests
                     "Local Exercise 1 map follows reviewed notes without highlighting during the count-in or after the phrase");
                 check(LessonScorePlayhead.TryLoad(playheadPath, 1, 7, library.FindWeeklyExerciseTrack(8)!.Path, 0, 11) is null,
                     "The playhead is disabled if the audio file does not match");
+                check(LessonScorePlayhead.FindLocal(library.Paths.Exercises, library.Paths.Pdf, 1, 7, track.Path, 0, 11)
+                    .Map?.Notes.Length == 32, "The map beside the PDF or weekly audio is found even with a different configured root");
             }
             Console.WriteLine($"Local media check: {library.Exercises.Count} exercise/tuning and {library.Rhythm.Count} rhythm tracks opened read-only.");
         }
