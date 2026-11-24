@@ -171,15 +171,18 @@ The reader starts at **Fit**. Use **+** or **−** to change the zoom, and
 unlinked exercise, enter the PDF page number yourself. **Open book externally**
 opens your usual PDF viewer.
 
-For the supported Guitar Aerobics PDF, click the printed speaker icon or
-timestamp to start the matching weekly MP3 at that exercise. Use **Play**,
-**Pause**, and the scrub bar above the score to control the weekly track.
-The marker needs a matching MP3 in your scanned exercise folder. The playhead
-shows audio time; it does not follow notes on the page.
+For the supported Guitar Aerobics PDF, click the printed speaker or timestamp
+to play only that exercise. The reader uses the next printed timestamp (or
+the end of the weekly MP3) to stop playback without splitting the file. Click
+the speaker again to pause or resume. The progress line is on the score.
+
+The reader highlights individual fret numbers only where you have a reviewed
+local `exercise-NNN.playhead.json` in `fftruebard-lessons`. The playhead file
+matches the selected audio by hash. Exercises without a match show progress
+without highlighting notes.
 
 The plugin renders one view at a time in memory. It doesn't copy or upload
-pages, read notes from the notation, move the score in time with the audio,
-or grade what you play from it.
+pages, infer note timing from the notation, or grade what you play from it.
 
 For the supported Guitar Aerobics PDF, the plugin includes a coordinate-only
 index for all 365 exercises. Select your book in **Settings → Lesson files**,

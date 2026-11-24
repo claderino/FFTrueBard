@@ -45,12 +45,15 @@ if (args.Length > 1)
     {
         var entry = index!.Find(exercise)!;
         Check(index.FindPrintedAudio(exercise) == entry, "Printed audio uses the fingerprint-matched box");
-        var image = LessonPdfRenderer.Render(pluginDirectory, local, entry.PdfPage, entry.Crop, entry.Crop);
+        var next = exercise < 365 && (exercise % 7 != 0 || exercise == 364) ? index.Find(exercise + 1) : null;
+        var image = LessonPdfRenderer.Render(pluginDirectory, local, entry.PdfPage, entry.Crop, entry.Crop, next);
         var hasInk = false;
         for (var i = 0; i < image.Pixels.Length && !hasInk; i += 4)
             hasInk = image.Pixels[i + 1] < 128;
         Check(hasInk, $"Exercise {exercise} is not blank");
         Check(image.AudioSeconds is not null, $"Exercise {exercise} has a readable printed audio cue");
+        if (next is not null)
+            Check(image.NextAudioSeconds > image.AudioSeconds, $"Exercise {exercise} ends at the next printed cue");
         if (exercise <= 3)
             Check(image.AudioSeconds == new[] { 0, 11, 23 }[exercise - 1], $"Exercise {exercise} has the expected cue");
     }

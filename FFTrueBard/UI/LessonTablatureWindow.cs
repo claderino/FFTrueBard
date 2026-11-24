@@ -8,13 +8,17 @@ namespace FFTrueBard.UI;
 
 public sealed partial class ConfigWindow
 {
-    private sealed record TablatureRequest(string Path, int Page, LessonTablatureCrop? Crop, LessonTablatureCrop? AudioCrop);
-    private sealed record LoadedTablature(IDalamudTextureWrap Texture, int? AudioSeconds);
+    private sealed record TablatureRequest(string Path, int Page, LessonTablatureCrop? Crop,
+        LessonTablatureCrop? AudioCrop, LessonTablatureEntry? NextAudio, string? PlayheadTrack);
+    private sealed record LoadedTablature(IDalamudTextureWrap Texture, int? AudioSeconds, int? NextAudioSeconds,
+        LessonScorePlayhead? Playhead);
 
     private TablatureRequest? tablatureRequest;
     private Task<LoadedTablature>? tablatureLoad;
     private IDalamudTextureWrap? tablatureTexture;
     private int? tablatureAudioSeconds;
+    private int? tablatureNextAudioSeconds;
+    private LessonScorePlayhead? tablaturePlayhead;
     private string tablatureError = "";
     private bool tablatureNeedsLoad;
     private bool tablatureFullPage;
@@ -106,14 +110,21 @@ public sealed partial class ConfigWindow
         }
 
         var crop = tablatureFullPage ? null : linkedCrop;
-        var audio = lessonLibrary?.Tablature?.FindPrintedAudio(config.LessonExercise);
+        var exercise = config.LessonExercise;
+        var index = lessonLibrary?.Tablature;
+        var track = lessonLibrary?.FindWeeklyExerciseTrack(exercise);
+        var audio = index?.FindPrintedAudio(exercise);
         var audioCrop = audio?.PdfPage == page ? audio.Crop : null;
-        var request = new TablatureRequest(path, page, crop, audioCrop);
+        var nextAudio = audioCrop is not null && track is not null && exercise < track.Last
+            ? index?.FindPrintedAudio(exercise + 1) : null;
+        var request = new TablatureRequest(path, page, crop, audioCrop, nextAudio, audioCrop is not null ? track?.Path : null);
         if (tablatureRequest != request)
         {
             tablatureTexture?.Dispose();
             tablatureTexture = null;
             tablatureAudioSeconds = null;
+            tablatureNextAudioSeconds = null;
+            tablaturePlayhead = null;
             tablatureRequest = request;
             tablatureError = "";
             tablatureNeedsLoad = true;
@@ -133,10 +144,11 @@ public sealed partial class ConfigWindow
             return;
         }
 
-        var playback = tablatureAudioSeconds is { } seconds ? FindReaderAudio(seconds) : null;
-        if (tablatureAudioSeconds is { } timestamp)
-            DrawReaderAudio(playback, timestamp);
+        var playback = tablatureAudioSeconds is { } start && track is not null &&
+            (exercise == track.Last || tablatureNextAudioSeconds is { } end && end > start)
+            ? new ReaderAudio(exercise, track, start, tablatureNextAudioSeconds) : null;
         DrawScorePlate(texture, crop, audioCrop, playback);
+        DrawReaderAudioStatus(playback);
         var step = SelectedCatalogExercise?.Steps.ElementAtOrDefault(lessonStep);
         if (!string.IsNullOrWhiteSpace(step) && step.Length <= 120 && ImGui.GetContentRegionAvail().Y > 3 * ImGui.GetTextLineHeightWithSpacing())
             ImGui.TextWrapped(step);
@@ -171,7 +183,7 @@ public sealed partial class ConfigWindow
                 (tablatureZoom == 100 ? "" : $"  /  {tablatureZoom}%"));
             ImGui.Image(texture.Handle, display, Vector2.Zero, Vector2.One, ReaderPaper);
             if (audioCrop is not null && playback is not null)
-                DrawReaderAudioHotspot(crop, audioCrop, playback, ImGui.GetItemRectMin(), display);
+                DrawReaderAudioOverlay(crop, audioCrop, playback, ImGui.GetItemRectMin(), display);
         }
         ImGui.EndChild();
         ImGui.PopStyleVar(2);
@@ -191,6 +203,8 @@ public sealed partial class ConfigWindow
                 {
                     tablatureTexture = loaded.Texture;
                     tablatureAudioSeconds = loaded.AudioSeconds;
+                    tablatureNextAudioSeconds = loaded.NextAudioSeconds;
+                    tablaturePlayhead = loaded.Playhead;
                 }
             }
             catch (Exception e)
@@ -207,12 +221,17 @@ public sealed partial class ConfigWindow
         if (!tablatureNeedsLoad || tablatureLoad is not null || textures is not { } provider) return;
         tablatureNeedsLoad = false;
         // Render off the game thread; Dalamud schedules the texture upload.
+        var root = lessonLibrary?.Paths.Root ?? "";
+        var exercise = config.LessonExercise;
         tablatureLoad = Task.Run(async () =>
         {
-            var image = LessonPdfRenderer.Render(pluginDirectory, request.Path, request.Page, request.Crop, request.AudioCrop);
+            var image = LessonPdfRenderer.Render(pluginDirectory, request.Path, request.Page, request.Crop, request.AudioCrop, request.NextAudio);
+            var playhead = request.PlayheadTrack is { } track && image.AudioSeconds is { } start
+                ? LessonScorePlayhead.TryLoad(LessonScorePlayhead.DefaultPath(root, request.Path, exercise),
+                    exercise, request.Page, track, start, image.NextAudioSeconds) : null;
             var texture = await provider.CreateFromRawAsync(RawImageSpecification.Bgra32(image.Width, image.Height), image.Pixels,
                 "FFTrueBard tablature").ConfigureAwait(false);
-            return new LoadedTablature(texture, image.AudioSeconds);
+            return new LoadedTablature(texture, image.AudioSeconds, image.NextAudioSeconds, playhead);
         });
     }
 

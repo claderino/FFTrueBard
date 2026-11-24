@@ -107,6 +107,13 @@ internal static class LessonTests
             check(loop.Read(buffer, 0, 2000) == 0, "Non-loop playback ends at EOF without spinning");
             loop.SeekSeconds(-100);
             check(loop.Position == 0, "Seek clamps to track start");
+            check(loop.SetPlaybackClip(.2, .4) && loop.Position == 800 && !loop.LoopEnabled, "Playing one exercise seeks to its start");
+            check(loop.Read(buffer, 0, buffer.Length) == 800 && buffer.Take(800).SequenceEqual(data.Skip(800).Take(800)),
+                "One-exercise playback stops before the next exercise samples");
+            check(loop.Read(buffer, 0, buffer.Length) == 0, "One-exercise playback does not loop or continue into the next cue");
+            loop.SeekSeconds(0);
+            check(loop.Position == 800, "Seeking respects the active exercise clip");
+            check(loop.SetLoop(0, 1, false) && loop.ClipEnd is null, "Manual audio controls can restore full-track playback");
         }
 
         // Optional, read-only integration check against a user-selected local library.
@@ -122,6 +129,16 @@ internal static class LessonTests
                 check(reader.TotalTime.TotalSeconds > 0 && reader.Read(samples, 0, samples.Length) > 0, "Local MP3 decodes without an external player");
             }
             check(Enumerable.Range(1, 365).All(e => library.Exercises.Count(t => e >= t.First && e <= t.Last) == 1), "Weekly track ranges cover exercises 1–365 exactly once");
+            var playheadPath = LessonScorePlayhead.DefaultPath(library.Paths.Root, library.Paths.Pdf, 1);
+            if (File.Exists(playheadPath))
+            {
+                var track = library.FindWeeklyExerciseTrack(1)!;
+                var map = LessonScorePlayhead.TryLoad(playheadPath, 1, 7, track.Path, 0, 11);
+                check(map?.Notes.Length == 32 && map.At(0) is null && map.At(4.03) == map.Notes[0] && map.At(11) is null,
+                    "Local Exercise 1 map follows reviewed notes without highlighting during the count-in or after the phrase");
+                check(LessonScorePlayhead.TryLoad(playheadPath, 1, 7, library.FindWeeklyExerciseTrack(8)!.Path, 0, 11) is null,
+                    "The playhead is disabled if the audio file does not match");
+            }
             Console.WriteLine($"Local media check: {library.Exercises.Count} exercise/tuning and {library.Rhythm.Count} rhythm tracks opened read-only.");
         }
     }

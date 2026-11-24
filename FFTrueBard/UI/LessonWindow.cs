@@ -89,7 +89,13 @@ public sealed partial class ConfigWindow
                     lessonPlayer.Seek(start);
                     loopA = (float)start;
                     loopB = (float)end;
-                    if (cue.PlayWhenReady) StartLessonPlayback();
+                    if (cue.PlayWhenReady)
+                    {
+                        if (!lessonPlayer.SetPlaybackClip(start, end))
+                            throw new InvalidDataException("The exercise range could not be played.");
+                        lessonPlayer.Seek(start);
+                        StartLessonPlayback();
+                    }
                     else catalogStatus = "Exercise cue loaded without playback. Press Play; enable/apply A-B looping if wanted.";
                 }
                 catch (Exception e)
@@ -281,7 +287,10 @@ public sealed partial class ConfigWindow
             if (ImGui.Button("B = current")) loopB = (float)lessonPlayer.Position;
             ImGui.Checkbox("Enable A-B loop", ref lessonLoop);
             if (ImGui.Button("Apply loop boundaries"))
+            {
                 lessonStatus = lessonPlayer.SetLoop(loopA, loopB, lessonLoop) ? "Loop settings applied." : "Loop must be within the track, with B at least 0.1 seconds after A.";
+                if (lessonStatus == "Loop settings applied.") activeReaderAudio = null;
+            }
             ImGui.TextUnformatted(lessonPlayer.LoopEnabled ? $"Active loop: {lessonPlayer.LoopA:0.00}–{lessonPlayer.LoopB:0.00} s" : "Loop off. Apply after editing.");
             if (lessonStatus.StartsWith("Loop", StringComparison.Ordinal)) ImGui.TextWrapped(lessonStatus);
             ImGui.TreePop();

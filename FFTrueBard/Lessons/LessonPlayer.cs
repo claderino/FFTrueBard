@@ -1,3 +1,4 @@
+using NAudio;
 using NAudio.Wave;
 
 namespace FFTrueBard.Lessons;
@@ -10,6 +11,8 @@ public sealed class LessonPlayer : IDisposable
     private LoopingLessonStream? stream;
     private bool discardLoad;
     private bool disposed;
+    private double positionAnchor;
+    private long outputAnchor;
     public string Path { get; private set; } = "";
     public string Status { get; private set; } = "Select an MP3 track to load.";
     public bool Loading => loading is not null;
@@ -17,6 +20,22 @@ public sealed class LessonPlayer : IDisposable
     public bool Playing => output?.PlaybackState == PlaybackState.Playing;
     public double Duration => stream?.TotalTime.TotalSeconds ?? 0;
     public double Position => stream?.Seconds ?? 0;
+    // The decoder reads ahead. Use the frames reported by the output device for
+    // the moving score marker rather than highlighting a buffered, unheard note.
+    public double AudiblePosition
+    {
+        get
+        {
+            if (stream is null || output is null || output.PlaybackState == PlaybackState.Stopped) return Position;
+            try
+            {
+                return Math.Clamp(positionAnchor + (output.GetPosition() - outputAnchor) /
+                    (double)stream.WaveFormat.AverageBytesPerSecond, 0, Position);
+            }
+            catch (InvalidOperationException) { return Position; }
+            catch (MmException) { return Position; }
+        }
+    }
     public float Volume { get; set; } = 0.25f;
     public bool LoopEnabled => stream?.LoopEnabled ?? false;
     public double LoopA => stream?.LoopA ?? 0;
@@ -26,6 +45,7 @@ public sealed class LessonPlayer : IDisposable
     {
         if (Loading || disposed) return;
         Unload();
+        positionAnchor = outputAnchor = 0;
         Path = path;
         discardLoad = false;
         Status = "Loading local MP3...";
@@ -60,7 +80,8 @@ public sealed class LessonPlayer : IDisposable
         if (output is null || stream is null) return;
         try
         {
-            if (Position >= Duration - 0.01) Seek(LoopEnabled ? LoopA : 0);
+            if (output.PlaybackState == PlaybackState.Stopped && Position >= (stream.ClipEnd ?? Duration) - 0.01)
+                Seek(LoopEnabled ? LoopA : stream.ClipStart ?? 0);
             output.Volume = Math.Clamp(Volume, 0, 1);
             output.Play();
         }
@@ -79,11 +100,21 @@ public sealed class LessonPlayer : IDisposable
         try
         {
             output?.Stop();
-            stream?.SeekSeconds(0);
+            Seek(stream?.ClipStart ?? 0);
         }
         catch (Exception e) { Status = $"Could not stop audio: {e.Message}. Reload the track or check the output device."; }
     }
-    public void Seek(double seconds) => stream?.SeekSeconds(seconds);
+    public void Seek(double seconds)
+    {
+        if (stream is null) return;
+        stream.SeekSeconds(seconds);
+        positionAnchor = stream.Seconds;
+        try { outputAnchor = output?.GetPosition() ?? 0; }
+        catch (InvalidOperationException) { outputAnchor = 0; }
+        catch (MmException) { outputAnchor = 0; }
+    }
+
+    public bool SetPlaybackClip(double start, double end) => stream?.SetPlaybackClip(start, end) ?? false;
     public bool SetLoop(double a, double b, bool enabled) => stream?.SetLoop(a, b, enabled) ?? false;
     public void ApplyVolume() { if (output is not null) output.Volume = Math.Clamp(Volume, 0, 1); }
 
@@ -117,22 +148,49 @@ public sealed class LoopingLessonStream(WaveStream source) : WaveStream
     private readonly object gate = new();
     private long loopStart;
     private long loopEnd = source.Length;
+    private (long Start, long End)? clip;
     public bool LoopEnabled { get; private set; }
     public double LoopA { get { lock (gate) return (double)loopStart / WaveFormat.AverageBytesPerSecond; } }
     public double LoopB { get { lock (gate) return (double)loopEnd / WaveFormat.AverageBytesPerSecond; } }
     public double Seconds { get { lock (gate) return source.CurrentTime.TotalSeconds; } }
+    public double? ClipStart { get { lock (gate) return clip is { } c ? (double)c.Start / WaveFormat.AverageBytesPerSecond : null; } }
+    public double? ClipEnd { get { lock (gate) return clip is { } c ? (double)c.End / WaveFormat.AverageBytesPerSecond : null; } }
     public override WaveFormat WaveFormat => source.WaveFormat;
     public override long Length => source.Length;
     public override long Position { get { lock (gate) return source.Position; } set { lock (gate) source.Position = Align(Math.Clamp(value, 0, Length)); } }
     private long Align(long value) => value - value % WaveFormat.BlockAlign;
     private long At(double seconds) => Align((long)(Math.Clamp(seconds, 0, TotalTime.TotalSeconds) * WaveFormat.AverageBytesPerSecond));
-    public void SeekSeconds(double seconds) { if (double.IsFinite(seconds)) { lock (gate) source.Position = At(seconds); } }
+    public void SeekSeconds(double seconds)
+    {
+        if (!double.IsFinite(seconds)) return;
+        lock (gate)
+        {
+            var requested = At(seconds);
+            source.Position = clip is { } c ? Math.Clamp(requested, c.Start, c.End) : requested;
+        }
+    }
+
+    public bool SetPlaybackClip(double start, double end)
+    {
+        if (!ValidRange(start, end)) return false;
+        lock (gate)
+        {
+            clip = (At(start), At(end));
+            LoopEnabled = false;
+            source.Position = clip.Value.Start;
+        }
+        return true;
+    }
+
+    private bool ValidRange(double a, double b) =>
+        double.IsFinite(a) && double.IsFinite(b) && a >= 0 && b <= TotalTime.TotalSeconds && b - a >= 0.1;
 
     public bool SetLoop(double a, double b, bool enabled)
     {
-        if (!double.IsFinite(a) || !double.IsFinite(b) || a < 0 || b > TotalTime.TotalSeconds || b - a < 0.1) return false;
+        if (!ValidRange(a, b)) return false;
         lock (gate)
         {
+            clip = null;
             loopStart = At(a);
             loopEnd = At(b);
             LoopEnabled = enabled;
@@ -149,7 +207,9 @@ public sealed class LoopingLessonStream(WaveStream source) : WaveStream
             while (total < count)
             {
                 if (LoopEnabled && (source.Position >= loopEnd || source.Position < loopStart)) source.Position = loopStart;
-                var available = LoopEnabled ? (int)Math.Min(count - total, loopEnd - source.Position) : count - total;
+                var limit = LoopEnabled ? loopEnd : clip?.End ?? source.Length;
+                var available = (int)Math.Min(count - total, limit - source.Position);
+                if (available <= 0) break;
                 var read = source.Read(buffer, offset + total, available);
                 if (read == 0) break;
                 total += read;

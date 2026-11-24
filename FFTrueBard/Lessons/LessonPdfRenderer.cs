@@ -10,10 +10,10 @@ internal static class LessonPdfRenderer
     private const int Bgra = 4;
     private static readonly object RenderLock = new();
 
-    internal sealed record Image(int Width, int Height, byte[] Pixels, int? AudioSeconds);
+    internal sealed record Image(int Width, int Height, byte[] Pixels, int? AudioSeconds, int? NextAudioSeconds = null);
 
     public static unsafe Image Render(string pluginDirectory, string path, int pageNumber, LessonTablatureCrop? crop,
-        LessonTablatureCrop? audioCrop = null)
+        LessonTablatureCrop? audioCrop = null, LessonTablatureEntry? nextAudio = null)
     {
         path = LessonLibrary.Normalize(path);
         if (!Path.GetExtension(path).Equals(".pdf", StringComparison.OrdinalIgnoreCase) || !File.Exists(path))
@@ -61,7 +61,17 @@ internal static class LessonPdfRenderer
                             var page = loadPage(document, pageNumber - 1);
                             if (page == 0)
                                 throw new InvalidDataException("This PDF page could not be loaded.");
-                            try { return RenderPage(library, page, crop, audioCrop); }
+                            try
+                            {
+                                var image = RenderPage(library, page, crop, audioCrop);
+                                if (image.AudioSeconds is null || nextAudio is null) return image;
+                                if (nextAudio.PdfPage == pageNumber)
+                                    return image with { NextAudioSeconds = ReadPrintedAudio(library, page, nextAudio.Crop) };
+                                var next = loadPage(document, nextAudio.PdfPage - 1);
+                                if (next == 0) return image;
+                                try { return image with { NextAudioSeconds = ReadPrintedAudio(library, next, nextAudio.Crop) }; }
+                                finally { closePage(next); }
+                            }
                             finally { closePage(page); }
                         }
                         finally { close(document); }
