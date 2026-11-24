@@ -177,11 +177,15 @@ the end of the weekly MP3) to stop playback without splitting the file. Click
 the speaker again to pause or resume. Playback includes the recorded
 announcement and count-in.
 
-When a reviewed local `exercise-NNN.playhead.json` in `fftruebard-lessons`
-matches the MP3, the vertical TAB playhead appears at the first note, not
-during the count-in. Click a fret to seek to its onset, or drag across the
-strings to move within the phrase. If there is no matching note map, use the
-audio-only scrub strip below the strings instead.
+The plugin includes reviewed playhead timings for Exercise 1. They work with
+the supported Guitar Aerobics PDF and matching Week 1 MP3; no separate JSON
+file is needed. A matching local `exercise-NNN.playhead.json` in
+`fftruebard-lessons` takes priority.
+
+With a matching note map, the vertical TAB playhead appears at the first
+note, not during the count-in. Click a fret to seek to its onset, or drag
+across the strings to move within the phrase. For other recordings and
+exercises without a map, use the audio-only scrub strip below the strings.
 
 The plugin renders one view at a time in memory. It doesn't copy or upload
 pages, infer note timing from the notation, or grade what you play from it.

@@ -24,6 +24,7 @@
     <None Include="$(Pkgbblanchon_PDFium_Win32)/runtimes/win-x64/native/pdfium.dll"
           Link="fftruebard-pdfium.dll" CopyToOutputDirectory="PreserveNewest" />
     <EmbeddedResource Include="Lessons/Indexes/guitar-aerobics.tablature.json" LogicalName="FFTrueBard.Lessons.GuitarAerobics.tablature.json" />
+    <EmbeddedResource Include="Lessons/Indexes/guitar-aerobics-001.playhead.json" LogicalName="FFTrueBard.Lessons.GuitarAerobics.Exercise001.playhead.json" />
   </ItemGroup>
 
 </Project>

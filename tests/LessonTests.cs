@@ -137,6 +137,10 @@ internal static class LessonTests
             Near(withoutMap.TimeAt(withoutMap.XAt(6)), 6) && Near(withoutMap.TimeAt(2), 10) &&
             !LessonScoreCursor.MatchesStaff(scoreRow, mapFixture with { Notes = [mapFixture.Notes[1], mapFixture.Notes[0]] }, 2, 10),
             "Unreviewed or invalid maps fall back to bounded audio-time seeking");
+        var bundled = LessonScorePlayhead.ReadBundled();
+        check(bundled.Map is { Exercise: 1, PdfPage: 7, Reviewed: true, Notes.Length: 32 } &&
+            Near(bundled.Map.Notes[0].Start, 4.02),
+            "The built-in Exercise 1 map contains only the supported timing/position schema and starts after the count-in");
 
         // Optional, read-only integration check against a user-selected local library.
         var local = Environment.GetEnvironmentVariable("FFTRUEBARD_LESSON_TEST_ROOT");
@@ -151,6 +155,29 @@ internal static class LessonTests
                 check(reader.TotalTime.TotalSeconds > 0 && reader.Read(samples, 0, samples.Length) > 0, "Local MP3 decodes without an external player");
             }
             check(Enumerable.Range(1, 365).All(e => library.Exercises.Count(t => e >= t.First && e <= t.Last) == 1), "Weekly track ranges cover exercises 1–365 exactly once");
+            var bundledRoot = Directory.CreateTempSubdirectory("fftruebard-bundled-playhead-");
+            try
+            {
+                var pdf = Path.Combine(bundledRoot.FullName, "book.pdf");
+                var mp3 = Path.Combine(bundledRoot.FullName, "week-1.mp3");
+                File.Copy(library.Paths.Pdf, pdf);
+                File.Copy(library.FindWeeklyExerciseTrack(1)!.Path, mp3);
+                var result = LessonScorePlayhead.FindForReader(bundledRoot.FullName, pdf, 1, 7, mp3, 0, 11);
+                check(result.Map?.Notes.Length == 32 && result.Problem is null, "Exercise 1 sync works with only the supported PDF and MP3");
+                var wrong = Path.Combine(bundledRoot.FullName, "other.mp3");
+                using (File.Create(wrong)) { }
+                check(LessonScorePlayhead.FindForReader(bundledRoot.FullName, pdf, 1, 7, wrong, 0, 11).Map is null &&
+                    LessonScorePlayhead.FindForReader(bundledRoot.FullName, wrong, 1, 7, mp3, 0, 11).Map is null,
+                    "The bundled map fails closed when either media fingerprint differs");
+                var overridePath = LessonScorePlayhead.DefaultPath(bundledRoot.FullName, pdf, 1);
+                Directory.CreateDirectory(Path.GetDirectoryName(overridePath)!);
+                var notes = bundled.Map.Notes.ToArray();
+                notes[0] = notes[0] with { Start = 4.03 };
+                File.WriteAllText(overridePath, System.Text.Json.JsonSerializer.Serialize(bundled.Map with { Notes = notes }));
+                check(LessonScorePlayhead.FindForReader(bundledRoot.FullName, pdf, 1, 7, mp3, 0, 11).Map?.Notes[0].Start == 4.03,
+                    "A valid local playhead takes precedence over the built-in Exercise 1 map");
+            }
+            finally { bundledRoot.Delete(recursive: true); }
             var playheadPath = LessonScorePlayhead.DefaultPath(library.Paths.Root, library.Paths.Pdf, 1);
             if (File.Exists(playheadPath))
             {

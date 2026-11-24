@@ -235,7 +235,7 @@ public sealed partial class ConfigWindow
         {
             var image = LessonPdfRenderer.Render(pluginDirectory, request.Path, request.Page, request.Crop, request.AudioCrop, request.NextAudio);
             var (playhead, problem) = request.PlayheadTrack is { } track && image.AudioSeconds is { } start
-                ? LessonScorePlayhead.FindLocal(root, request.Path, exercise, request.Page, track, start, image.NextAudioSeconds)
+                ? LessonScorePlayhead.FindForReader(root, request.Path, exercise, request.Page, track, start, image.NextAudioSeconds)
                 : (null, null);
             var texture = await provider.CreateFromRawAsync(RawImageSpecification.Bgra32(image.Width, image.Height), image.Pixels,
                 "FFTrueBard tablature").ConfigureAwait(false);
