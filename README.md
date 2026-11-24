@@ -171,9 +171,15 @@ The reader starts at **Fit**. Use **+** or **−** to change the zoom, and
 unlinked exercise, enter the PDF page number yourself. **Open book externally**
 opens your usual PDF viewer.
 
+For the supported Guitar Aerobics PDF, click the printed speaker icon or
+timestamp to start the matching weekly MP3 at that exercise. Use **Play**,
+**Pause**, and the scrub bar above the score to control the weekly track.
+The marker needs a matching MP3 in your scanned exercise folder. The playhead
+shows audio time; it does not follow notes on the page.
+
 The plugin renders one view at a time in memory. It doesn't copy or upload
-pages, read notes from the notation, sync the view to audio, or grade what you
-play from it.
+pages, read notes from the notation, move the score in time with the audio,
+or grade what you play from it.
 
 For the supported Guitar Aerobics PDF, the plugin includes a coordinate-only
 index for all 365 exercises. Select your book in **Settings → Lesson files**,

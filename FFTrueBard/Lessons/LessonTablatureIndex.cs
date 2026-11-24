@@ -14,12 +14,14 @@ public sealed class LessonTablatureIndex
     private sealed record IndexFile(int SchemaVersion, string PdfSha256, LessonTablatureEntry[] Exercises);
 
     private readonly Dictionary<int, LessonTablatureEntry> entries;
+    private Dictionary<int, LessonTablatureEntry>? printedAudioEntries;
 
     private LessonTablatureIndex(LessonTablatureEntry[] exercises) =>
         entries = exercises.ToDictionary(e => e.Exercise);
 
     public int Count => entries.Count;
     public LessonTablatureEntry? Find(int exercise) => entries.GetValueOrDefault(exercise);
+    internal LessonTablatureEntry? FindPrintedAudio(int exercise) => printedAudioEntries?.GetValueOrDefault(exercise);
 
     public static LessonTablatureIndex? LoadForPdf(string pdfPath, Action<string>? warn = null)
     {
@@ -36,6 +38,14 @@ public sealed class LessonTablatureIndex
             return digest = Convert.ToHexString(SHA256.HashData(pdf));
         }
 
+        LessonTablatureIndex? MatchBundled()
+        {
+            if (pdfInfo.Length != BundledPdfBytes) return null;
+            var bundled = ReadBundled();
+            return bundled.PdfSha256.Equals(PdfHash(), StringComparison.OrdinalIgnoreCase)
+                ? new(bundled.Exercises) : null;
+        }
+
         var path = Path.ChangeExtension(pdfPath, ".tablature.json");
         if (File.Exists(path))
         {
@@ -45,7 +55,7 @@ public sealed class LessonTablatureIndex
                 var local = Read(input);
                 if (!local.PdfSha256.Equals(PdfHash(), StringComparison.OrdinalIgnoreCase))
                     throw new InvalidDataException("The tablature index was made for a different PDF.");
-                return new(local.Exercises);
+                return new(local.Exercises) { printedAudioEntries = MatchBundled()?.entries };
             }
             catch (Exception e) when (warn is not null && IsIndexError(e))
             {
@@ -53,10 +63,9 @@ public sealed class LessonTablatureIndex
             }
         }
 
-        if (pdfInfo.Length != BundledPdfBytes) return null;
-        var bundled = ReadBundled();
-        return bundled.PdfSha256.Equals(PdfHash(), StringComparison.OrdinalIgnoreCase)
-            ? new(bundled.Exercises) : null;
+        var match = MatchBundled();
+        if (match is not null) match.printedAudioEntries = match.entries;
+        return match;
     }
 
     internal static bool IsIndexError(Exception error) =>

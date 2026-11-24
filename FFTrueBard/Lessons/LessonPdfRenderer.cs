@@ -10,14 +10,16 @@ internal static class LessonPdfRenderer
     private const int Bgra = 4;
     private static readonly object RenderLock = new();
 
-    internal sealed record Image(int Width, int Height, byte[] Pixels);
+    internal sealed record Image(int Width, int Height, byte[] Pixels, int? AudioSeconds);
 
-    public static unsafe Image Render(string pluginDirectory, string path, int pageNumber, LessonTablatureCrop? crop)
+    public static unsafe Image Render(string pluginDirectory, string path, int pageNumber, LessonTablatureCrop? crop,
+        LessonTablatureCrop? audioCrop = null)
     {
         path = LessonLibrary.Normalize(path);
         if (!Path.GetExtension(path).Equals(".pdf", StringComparison.OrdinalIgnoreCase) || !File.Exists(path))
             throw new FileNotFoundException("Select an existing local PDF in Lesson files.");
         crop?.Validate();
+        audioCrop?.Validate();
 
         // PDFium needs these bytes to stay pinned until we close the document. Loading the
         // bytes ourselves also supports Unicode paths and keeps PDFium away from the filesystem.
@@ -59,7 +61,7 @@ internal static class LessonPdfRenderer
                             var page = loadPage(document, pageNumber - 1);
                             if (page == 0)
                                 throw new InvalidDataException("This PDF page could not be loaded.");
-                            try { return RenderPage(library, page, crop); }
+                            try { return RenderPage(library, page, crop, audioCrop); }
                             finally { closePage(page); }
                         }
                         finally { close(document); }
@@ -71,7 +73,7 @@ internal static class LessonPdfRenderer
         }
     }
 
-    private static unsafe Image RenderPage(nint library, nint page, LessonTablatureCrop? crop)
+    private static unsafe Image RenderPage(nint library, nint page, LessonTablatureCrop? crop, LessonTablatureCrop? audioCrop)
     {
         nint Export(string name) => NativeLibrary.GetExport(library, "FPDF" + name);
         var pageWidth = ((delegate* unmanaged<nint, float>)Export("_GetPageWidthF"))(page);
@@ -110,6 +112,47 @@ internal static class LessonPdfRenderer
             }
             finally { destroy(bitmap); }
         }
-        return new(width, height, pixels);
+        var seconds = audioCrop is null ? null : ReadPrintedAudio(library, page, audioCrop);
+        return new(width, height, pixels, seconds);
+    }
+
+    private static unsafe int? ReadPrintedAudio(nint library, nint page, LessonTablatureCrop crop)
+    {
+        var toPage = (delegate* unmanaged<nint, int, int, int, int, int, int, int, double*, double*, int>)
+            NativeLibrary.GetExport(library, "FPDF_DeviceToPage");
+        // The PDF's crop box can offset its coordinate origin. Ask PDFium to map
+        // the printed label rectangle from a normalized rendering to page space.
+        const int grid = 100_000;
+        double left, top, right, bottom;
+        if (toPage(page, 0, 0, grid, grid, 0, (int)(crop.X * grid), (int)((crop.Y + crop.Height * .87) * grid), &left, &top) == 0 ||
+            toPage(page, 0, 0, grid, grid, 0, (int)((crop.X + crop.Width * .057) * grid), (int)((crop.Y + crop.Height) * grid), &right, &bottom) == 0)
+            return null;
+
+        var load = (delegate* unmanaged<nint, nint>)NativeLibrary.GetExport(library, "FPDFText_LoadPage");
+        var close = (delegate* unmanaged<nint, void>)NativeLibrary.GetExport(library, "FPDFText_ClosePage");
+        var read = (delegate* unmanaged<nint, double, double, double, double, char*, int, int>)
+            NativeLibrary.GetExport(library, "FPDFText_GetBoundedText");
+        var text = load(page);
+        if (text == 0) return null;
+        try
+        {
+            // The known book prints m:ss in the bottom of the weekday column.
+            Span<char> buffer = stackalloc char[24];
+            int count;
+            fixed (char* output = buffer)
+                count = read(text, left, top, right, bottom, output, buffer.Length);
+            if (count <= 0 || count >= buffer.Length) return null;
+            var label = buffer[..count].TrimEnd('\0').Trim();
+            var colon = label.IndexOf(':');
+            if (colon is < 1 or > 2 || label.Length != colon + 3) return null;
+            foreach (var digit in label[..colon])
+                if (!char.IsAsciiDigit(digit)) return null;
+            var tens = label[colon + 1];
+            var ones = label[colon + 2];
+            return tens is >= '0' and <= '5' && char.IsAsciiDigit(ones)
+                ? int.Parse(label[..colon]) * 60 + (tens - '0') * 10 + ones - '0'
+                : null;
+        }
+        finally { close(text); }
     }
 }

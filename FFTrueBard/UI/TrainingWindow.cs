@@ -87,6 +87,8 @@ public sealed partial class ConfigWindow
     private void StopTools()
     {
         queuedLessonCue = null;
+        activeReaderAudio = null;
+        readerAudioError = "";
         lessonPlayer.Stop();
         lessonDialogs.Reset();
         mappingCapture.Cancel();

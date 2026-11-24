@@ -16,7 +16,7 @@ public sealed partial class ConfigWindow
     private int lessonStep;
     private int exerciseJump;
     private bool[] lessonSelfChecks = [];
-    private LessonAudioCue? queuedLessonCue;
+    private (LessonAudioCue Cue, bool PlayWhenReady)? queuedLessonCue;
     private LessonExercise? SelectedCatalogExercise => lessonCatalog?.Exercises.FirstOrDefault(e => e.Exercise == config.LessonExercise);
     private bool LessonNavigationBlocked => LessonDirty || lessonPitch.Running || loadingSequence is not null ||
         loadingCatalog is not null || scanningLessons is not null || lessonPlayer.Loading;

@@ -83,16 +83,22 @@ public sealed partial class ConfigWindow
             {
                 try
                 {
-                    var (start, end) = cue.Within(lessonPlayer.Duration);
+                    var (start, end) = cue.Cue.Within(lessonPlayer.Duration);
                     if (!lessonPlayer.SetLoop(start, end, false))
                         throw new InvalidDataException("The cue cannot be represented as an audio range.");
                     lessonPlayer.Seek(start);
                     loopA = (float)start;
                     loopB = (float)end;
-                    catalogStatus = "Exercise cue loaded without playback. Press Play; enable/apply A-B looping if wanted.";
+                    if (cue.PlayWhenReady) StartLessonPlayback();
+                    else catalogStatus = "Exercise cue loaded without playback. Press Play; enable/apply A-B looping if wanted.";
                 }
-                catch (Exception e) { catalogStatus = $"Cue not applied: {e.Message}"; }
+                catch (Exception e)
+                {
+                    catalogStatus = $"Cue not applied: {e.Message}";
+                    if (cue.PlayWhenReady) readerAudioError = catalogStatus;
+                }
             }
+            else if (queuedLessonCue is { PlayWhenReady: true }) readerAudioError = lessonPlayer.Status;
             queuedLessonCue = null;
         }
         if (scanningLessons?.IsCompleted != true) return;
@@ -179,16 +185,27 @@ public sealed partial class ConfigWindow
         catch (Exception e) { lessonStatus = $"Could not open PDF: {e.Message}"; }
     }
 
-    private void LoadLessonTrack(LessonTrack track, LessonAudioCue? cue = null)
+    private void LoadLessonTrack(LessonTrack track, LessonAudioCue? cue = null, bool playWhenReady = false)
     {
         if (lessonPlayer.Loading) return;
         StopTools();
         config.PracticeMode = true;
         trainingPaused = true;
-        lessonPlayer.Load(track.Path);
-        queuedLessonCue = cue;
-        initialiseLoop = true;
         save();
+        lessonPlayer.Load(track.Path);
+        queuedLessonCue = cue is null ? null : (cue, playWhenReady);
+        initialiseLoop = true;
+    }
+
+    private void StartLessonPlayback()
+    {
+        // Playback never contributes to chord grading or mapped inputs.
+        mappingCapture.Cancel();
+        CancelMeasurements();
+        StopMetronome();
+        config.PracticeMode = true;
+        trainingPaused = true;
+        lessonPlayer.Play();
     }
 
     private void DrawLessonProgress()
@@ -246,16 +263,7 @@ public sealed partial class ConfigWindow
         ImGui.TextWrapped(lessonPlayer.Status);
         if (lessonPlayer.Path.Length > 0) ImGui.TextWrapped($"Track: {Path.GetFileName(lessonPlayer.Path)}");
         ImGui.BeginDisabled(!lessonPlayer.Ready);
-        if (ImGui.Button("Play lesson audio"))
-        {
-            // Playback never contributes to chord grading or mapped inputs.
-            mappingCapture.Cancel();
-            CancelMeasurements();
-            StopMetronome();
-            config.PracticeMode = true;
-            trainingPaused = true;
-            lessonPlayer.Play();
-        }
+        if (ImGui.Button("Play lesson audio")) StartLessonPlayback();
         ImGui.SameLine();
         if (ImGui.Button("Pause audio")) lessonPlayer.Pause();
         ImGui.SameLine();

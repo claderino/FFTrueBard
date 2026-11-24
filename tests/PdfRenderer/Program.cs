@@ -22,6 +22,11 @@ CheckPixel(full, .75, .75, 255, 0, 0);
 var crop = LessonPdfRenderer.Render(pluginDirectory, fixture, 1, new(.5, .5, .5, .5));
 Check((crop.Width, crop.Height) == (1800, 900), "Excerpt dimensions");
 CheckPixel(crop, .5, .5, 255, 0, 0);
+Check(full.AudioSeconds is null, "Rendering an unmatched page doesn't interpret an audio cue");
+var withAudio = LessonPdfRenderer.Render(pluginDirectory, fixture, 1, null, new(0, 0, 1, 1));
+Check(withAudio.AudioSeconds == 71, "The printed time is read from the bottom-left marker region");
+var withoutMarker = LessonPdfRenderer.Render(pluginDirectory, fixture, 1, null, new(.5, .5, .5, .5));
+Check(withoutMarker.AudioSeconds is null, "The renderer doesn't guess when there is no printed marker");
 Reject(() => LessonPdfRenderer.Render(pluginDirectory, fixture, 2, null), "outside this PDF");
 Reject(() => LessonPdfRenderer.Render(pluginDirectory, fixture, 1, new(.9, .9, .5, .5)), "crop");
 var damaged = Path.Combine(folder.Path, "damaged.pdf");
@@ -39,13 +44,17 @@ if (args.Length > 1)
     for (var exercise = 1; exercise <= 365; exercise++)
     {
         var entry = index!.Find(exercise)!;
-        var image = LessonPdfRenderer.Render(pluginDirectory, local, entry.PdfPage, entry.Crop);
+        Check(index.FindPrintedAudio(exercise) == entry, "Printed audio uses the fingerprint-matched box");
+        var image = LessonPdfRenderer.Render(pluginDirectory, local, entry.PdfPage, entry.Crop, entry.Crop);
         var hasInk = false;
         for (var i = 0; i < image.Pixels.Length && !hasInk; i += 4)
             hasInk = image.Pixels[i + 1] < 128;
         Check(hasInk, $"Exercise {exercise} is not blank");
+        Check(image.AudioSeconds is not null, $"Exercise {exercise} has a readable printed audio cue");
+        if (exercise <= 3)
+            Check(image.AudioSeconds == new[] { 0, 11, 23 }[exercise - 1], $"Exercise {exercise} has the expected cue");
     }
-    Console.WriteLine("Rendered all 365 indexed excerpts from the supported PDF with no sidecar.");
+    Console.WriteLine("Rendered and read audio markers for all 365 indexed excerpts with no sidecar.");
 }
 
 static void Check(bool condition, string message)
@@ -70,13 +79,16 @@ static void Reject(Action render, string expectedMessage)
 static void WriteTestPdf(string path)
 {
     // Red in the top-left, blue in the bottom-right; PDF's origin is bottom-left.
-    const string content = "1 0 0 rg 0 100 200 100 re f\n0 0 1 rg 200 0 200 100 re f\n";
+    const string content = "1 0 0 rg 40 130 200 100 re f\n0 0 1 rg 240 30 200 100 re f\n" +
+        "0 0 0 rg BT /F1 7 Tf 42 35 Td (1:11) Tj ET\n";
     string[] objects =
     [
         "<< /Type /Catalog /Pages 2 0 R >>",
         "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 200] /Resources << >> /Contents 4 0 R >>",
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 500 300] /CropBox [40 30 440 230] " +
+        "/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
         $"<< /Length {content.Length} >>\nstream\n{content}endstream",
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
     ];
     using var output = File.Create(path);
     void Write(string text) => output.Write(Encoding.ASCII.GetBytes(text));

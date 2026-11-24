@@ -26,6 +26,15 @@ internal static class LessonTablatureIndexTests
             var library = LessonLibrary.Scan(new("", pdf, "", ""));
             check(library.Tablature is { Count: 2 } index && index.Find(1) == first &&
                 index.Find(365) == last && index.Find(2) is null, "Book excerpts are indexed independently of guided cards");
+            check(library.Tablature?.FindPrintedAudio(1) is null, "A custom sidecar cannot mark an unrelated PDF as supporting printed audio");
+            var weekOne = LessonLibrary.ParseTrack("01_Week-01_Exercises-1-7.mp3");
+            var weekLast = LessonLibrary.ParseTrack("52_Week-52_Exercises-358-365.mp3");
+            library = library with { Exercises = [weekOne, weekLast], Rhythm = [weekOne] };
+            check(library.FindWeeklyExerciseTrack(2) == weekOne && library.FindWeeklyExerciseTrack(365) == weekLast,
+                "Printed audio resolves to the correct weekly MP3, including exercise 365");
+            check(library.FindWeeklyExerciseTrack(8) is null &&
+                (library with { Exercises = [weekOne, weekOne with { Path = "duplicate.mp3" }] }).FindWeeklyExerciseTrack(2) is null,
+                "Printed audio does not guess when weekly audio is missing or ambiguous");
 
             foreach (var (digest, entries) in new (string, LessonTablatureEntry[])[]
             {

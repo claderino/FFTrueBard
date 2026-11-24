@@ -10,6 +10,20 @@ public sealed record LessonLibrary(LessonPaths Paths, IReadOnlyList<LessonTrack>
 {
     public LessonTablatureIndex? Tablature { get; private init; }
 
+    internal LessonTrack? FindWeeklyExerciseTrack(int exercise)
+    {
+        if (exercise is < 1 or > 365) return null;
+        var week = Math.Min(52, (exercise - 1) / 7 + 1);
+        LessonTrack? match = null;
+        foreach (var track in Exercises)
+        {
+            if (track.Week != week || exercise < track.First || exercise > track.Last) continue;
+            if (match is not null) return null;
+            match = track;
+        }
+        return match;
+    }
+
     public static LessonLibrary Scan(LessonPaths requested)
     {
         var warnings = new List<string>();
