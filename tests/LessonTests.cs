@@ -124,10 +124,17 @@ internal static class LessonTests
         var scoreCursor = new LessonScoreCursor(scoreRow, 2, 10, mapFixture);
         check(Near(scoreCursor.XAt(3), .21) && Near(scoreCursor.TimeAt(.61), 5),
             "The cursor crosses the reviewed fret at its onset and dragging back to that fret seeks to the onset");
-        check(Enumerable.Range(2, 9).All(s => Near(scoreCursor.TimeAt(scoreCursor.XAt(s)), s)),
-            "The score time-to-position and position-to-time mappings round-trip across the clip");
+        check(!scoreCursor.ShowsNoteAt(2.99) && scoreCursor.ShowsNoteAt(3) &&
+            scoreCursor.ShowsNoteAt(5.99) && !scoreCursor.ShowsNoteAt(6),
+            "The TAB playhead appears only during the reviewed phrase, not the count-in or trailing audio");
+        check(Near(scoreCursor.TimeAt(.15), 3) && Near(scoreCursor.TimeAt(.21), 3) &&
+            Near(scoreCursor.TimeAt(.619), 5) && Near(scoreCursor.TimeAt(.9), 5),
+            "Seeking on the score starts at the first note, snaps printed frets to their onsets, and skips the audio tail");
+        check(Near(scoreCursor.TimeAt(scoreCursor.XAt(4)), 4) && Near(scoreCursor.XAt(5.9), .61),
+            "Dragging between notes interpolates only inside the phrase and the cursor holds on the last note");
         var withoutMap = new LessonScoreCursor(scoreRow, 2, 10, null);
-        check(Near(withoutMap.TimeAt(withoutMap.XAt(6)), 6) && Near(withoutMap.TimeAt(2), 10) &&
+        check(!withoutMap.NoteSynced && !withoutMap.ShowsNoteAt(6) &&
+            Near(withoutMap.TimeAt(withoutMap.XAt(6)), 6) && Near(withoutMap.TimeAt(2), 10) &&
             !LessonScoreCursor.MatchesStaff(scoreRow, mapFixture with { Notes = [mapFixture.Notes[1], mapFixture.Notes[0]] }, 2, 10),
             "Unreviewed or invalid maps fall back to bounded audio-time seeking");
 

@@ -45,11 +45,19 @@ public sealed partial class ConfigWindow
             ImGui.TextWrapped(lessonPlayer.Status);
         else if (audio is not null && tablatureStaff is { } staff)
         {
-            var end = audio.EndSeconds ?? (lessonPlayer.Ready && activeReaderAudio == audio ? lessonPlayer.Duration : double.PositiveInfinity);
-            var reviewed = LessonScoreCursor.MatchesStaff(staff, tablaturePlayhead, audio.Seconds, end);
-            ImGui.TextDisabled(reviewed ? "Note-synced playhead  /  Drag across TAB to seek"
-                : "Audio-time playhead  /  Drag across TAB to seek");
-            if (!reviewed && ImGui.IsItemHovered())
+            var ready = lessonPlayer.Ready && activeReaderAudio == audio;
+            var end = audio.EndSeconds ?? (ready ? lessonPlayer.Duration : double.PositiveInfinity);
+            var mapping = new LessonScoreCursor(staff, audio.Seconds, end, tablaturePlayhead);
+            var label = "Audio only  /  Drag the strip below TAB to seek";
+            if (mapping.NoteSynced)
+            {
+                var position = ready ? lessonPlayer.AudiblePosition : mapping.MusicStart;
+                label = position < mapping.MusicStart ? "Intro / count-in  ·  Click a fret to skip ahead"
+                    : position >= mapping.MusicEnd ? "Phrase ended  ·  Click a fret to seek"
+                    : "Note-synced  /  Drag across TAB to seek";
+            }
+            ImGui.TextDisabled(label);
+            if (!mapping.NoteSynced && ImGui.IsItemHovered())
                 ImGui.SetTooltip(tablaturePlayheadProblem ?? "The note timings don't match this TAB row.");
         }
         else if (audio is not null) ImGui.TextDisabled("This TAB row could not be located for seeking.");
@@ -72,17 +80,21 @@ public sealed partial class ConfigWindow
         {
             var scale = ReaderScale;
             var mapping = new LessonScoreCursor(staff, audio.Seconds, end, tablaturePlayhead);
-            var rowMin = Project(mapping.XAt(audio.Seconds), staff.Top);
-            var rowMax = Project(mapping.XAt(end), staff.Bottom);
+            var rowMin = Project(mapping.Left, staff.Top);
+            var rowMax = Project(mapping.Right, staff.Bottom);
+            var bottomEdge = Project(mapping.Right, box.Y + box.Height).Y;
+            var stripY = (rowMax.Y + bottomEdge) * .5f;
             if (!readerRevealedStaff)
             {
-                var overflow = rowMax.Y + 5 * scale - draw.GetClipRectMax().Y;
+                var overflow = (mapping.NoteSynced ? rowMax.Y : stripY) + 5 * scale - draw.GetClipRectMax().Y;
                 if (overflow > 0 && ImGui.GetScrollMaxY() > ImGui.GetScrollY())
                     ImGui.SetScrollY(Math.Min(ImGui.GetScrollMaxY(), ImGui.GetScrollY() + overflow));
                 readerRevealedStaff = true;
             }
-            var hitMin = Vector2.Max(rowMin - new Vector2(0, 8 * scale), imageOrigin);
-            var hitMax = Vector2.Min(rowMax + new Vector2(0, 5 * scale), imageOrigin + imageSize);
+            var hitMin = Vector2.Max(new Vector2(rowMin.X, mapping.NoteSynced
+                ? rowMin.Y - 8 * scale : Math.Max(rowMax.Y, stripY - 6 * scale)), imageOrigin);
+            var hitMax = Vector2.Min(new Vector2(rowMax.X, mapping.NoteSynced
+                ? rowMax.Y + 5 * scale : Math.Min(bottomEdge, stripY + 6 * scale)), imageOrigin + imageSize);
             if (hitMin.X < hitMax.X && hitMin.Y < hitMax.Y)
             {
                 ImGui.SetCursorScreenPos(hitMin);
@@ -91,14 +103,14 @@ public sealed partial class ConfigWindow
                 double MouseTime()
                 {
                     var x = Math.Clamp((ImGui.GetMousePos().X - rowMin.X) / (rowMax.X - rowMin.X), 0, 1);
-                    return mapping.TimeAt(mapping.XAt(audio.Seconds) + x * (staff.Right - mapping.XAt(audio.Seconds)));
+                    return mapping.TimeAt(mapping.Left + x * (mapping.Right - mapping.Left));
                 }
                 if (ImGui.IsItemActivated()) readerScrubAudio = audio;
                 if (readerScrubAudio == audio && ImGui.IsItemActive())
                 {
                     position = MouseTime();
                     ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
-                    ImGui.SetTooltip($"Seek to {Math.Max(0, position - audio.Seconds):0.0} s");
+                    ImGui.SetTooltip($"Seek to {Math.Max(0, position - audio.Seconds):0.00} s");
                 }
                 else if (readerScrubAudio == audio && ImGui.IsItemDeactivated())
                 {
@@ -112,19 +124,33 @@ public sealed partial class ConfigWindow
                 else if (ImGui.IsItemHovered())
                 {
                     ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
-                    ImGui.SetTooltip("Click or drag across TAB to seek.");
+                    ImGui.SetTooltip(mapping.NoteSynced
+                        ? "Click a fret to seek to that note, or drag across TAB."
+                        : "Scrub the recording by elapsed time. This exercise has no matching reviewed note map.");
                 }
                 ImGui.EndDisabled();
                 ImGui.SetCursorScreenPos(cursor);
             }
             var playheadX = Project(mapping.XAt(position), staff.Top).X;
-            var top = new Vector2(playheadX, rowMin.Y - 5 * scale);
-            var bottom = new Vector2(playheadX, rowMax.Y + 3 * scale);
             draw.PushClipRect(imageOrigin, imageOrigin + imageSize, true);
-            draw.AddLine(top, bottom, ImGui.GetColorU32(Rgb(0x523612)), 5 * scale);
-            draw.AddLine(top, bottom, ImGui.GetColorU32(Rgb(0xffc65d)), 3 * scale);
-            draw.AddTriangleFilled(top + new Vector2(-5, -5) * scale, top + new Vector2(5, -5) * scale,
-                top + new Vector2(0, 2) * scale, ImGui.GetColorU32(Rgb(0x91651e)));
+            if (mapping.ShowsNoteAt(position))
+            {
+                var top = new Vector2(playheadX, rowMin.Y - 5 * scale);
+                var bottom = new Vector2(playheadX, rowMax.Y + 3 * scale);
+                draw.AddLine(top, bottom, ImGui.GetColorU32(Rgb(0x523612)), 5 * scale);
+                draw.AddLine(top, bottom, ImGui.GetColorU32(Rgb(0xffc65d)), 3 * scale);
+                draw.AddTriangleFilled(top + new Vector2(-5, -5) * scale, top + new Vector2(5, -5) * scale,
+                    top + new Vector2(0, 2) * scale, ImGui.GetColorU32(Rgb(0x91651e)));
+            }
+            else if (!mapping.NoteSynced)
+            {
+                var lineStart = new Vector2(rowMin.X, stripY);
+                var lineEnd = new Vector2(rowMax.X, stripY);
+                var thumb = new Vector2(playheadX, stripY);
+                draw.AddLine(lineStart, lineEnd, ImGui.GetColorU32(Rgb(0xb2a489)), 2 * scale);
+                draw.AddLine(lineStart, thumb, ImGui.GetColorU32(Rgb(0x91651e)), 2 * scale);
+                draw.AddCircleFilled(thumb, 3 * scale, ImGui.GetColorU32(Rgb(0x91651e)));
+            }
             draw.PopClipRect();
         }
         var min = Project(box.X, box.Y + box.Height * .74);

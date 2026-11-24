@@ -2,7 +2,7 @@ namespace FFTrueBard.Lessons;
 
 internal readonly record struct LessonTabStaff(double Left, double Top, double Right, double Bottom);
 
-/// <summary>Invertible mapping between the visible TAB row and one exercise's audio range.</summary>
+/// <summary>Maps reviewed note positions, keeping audio outside the phrase off the score.</summary>
 internal readonly struct LessonScoreCursor
 {
     private readonly double left;
@@ -10,6 +10,11 @@ internal readonly struct LessonScoreCursor
     private readonly double start;
     private readonly double end;
     private readonly LessonScoreMark[]? marks;
+    public bool NoteSynced => marks is not null;
+    public double Left => left;
+    public double Right => right;
+    public double MusicStart => marks?[0].Start ?? start;
+    public double MusicEnd => marks?[^1].End ?? end;
 
     public LessonScoreCursor(LessonTabStaff staff, double start, double end, LessonScorePlayhead? map)
     {
@@ -25,13 +30,13 @@ internal readonly struct LessonScoreCursor
     {
         if (map is null || map.Notes.Length == 0) return false;
         var x = staff.Left + (staff.Right - staff.Left) * .06;
-        var time = start;
+        var time = double.NegativeInfinity;
         foreach (var note in map.Notes)
         {
             var target = Center(note);
             // The supported book has one TAB staff per exercise. Do not attach
             // a reordered or unrelated set of marks to that staff.
-            if (target <= x || target >= staff.Right || note.Start <= time || note.Start >= end ||
+            if (target <= x || target >= staff.Right || note.Start < start || note.Start <= time || note.Start >= end ||
                 note.Y + note.Height < staff.Top - .003 || note.Y > staff.Bottom)
                 return false;
             x = target;
@@ -40,8 +45,22 @@ internal readonly struct LessonScoreCursor
         return true;
     }
 
-    public double XAt(double seconds) => Map(seconds, start, end, left, right, false);
-    public double TimeAt(double x) => Map(x, left, right, start, end, true);
+    public bool ShowsNoteAt(double seconds) => NoteSynced && seconds >= MusicStart && seconds < MusicEnd;
+
+    public double XAt(double seconds) => marks is { } music
+        ? Map(seconds, MusicStart, music[^1].Start, Center(music[0]), Center(music[^1]), false)
+        : Map(seconds, start, end, left, right, false);
+
+    public double TimeAt(double x)
+    {
+        if (marks is not { } music) return Map(x, left, right, start, end, true);
+        foreach (var mark in music)
+        {
+            // Click the printed fret itself to start at its onset.
+            if (x >= mark.X && x <= mark.X + mark.Width) return mark.Start;
+        }
+        return Map(x, Center(music[0]), Center(music[^1]), MusicStart, music[^1].Start, true);
+    }
 
     private double Map(double value, double from, double to, double first, double last, bool toTime)
     {
