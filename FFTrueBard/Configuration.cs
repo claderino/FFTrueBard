@@ -14,6 +14,7 @@ public sealed class Configuration : IPluginConfiguration
     public string LessonRhythmFolder { get; set; } = "";
     public int LessonExercise { get; set; } = 1;
     public float LessonVolume { get; set; } = 0.25f;
+    public int LessonSpeedPercent { get; set; } = 100;
     public string LessonSequenceFile { get; set; } = "";
     public float LessonPitchTolerance { get; set; } = 35;
     public string LessonCatalogFile { get; set; } = "";

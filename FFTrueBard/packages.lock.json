@@ -34,6 +34,12 @@
           "NAudio.WinMM": "2.2.1"
         }
       },
+      "SoundTouch.Net": {
+        "type": "Direct",
+        "requested": "[2.3.2, )",
+        "resolved": "2.3.2",
+        "contentHash": "5A29Pll/n4kEEPvCD5DFot3MJG+VgiaRG6LbNQVkF94VerC1b5iZtJKfdLQXZPFrl3LiVbKm3txKBe5/pbv5rw=="
+      },
       "NAudio.Asio": {
         "type": "Transitive",
         "resolved": "2.2.1",

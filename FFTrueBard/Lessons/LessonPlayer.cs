@@ -9,6 +9,7 @@ public sealed class LessonPlayer : IDisposable
     private Task<AudioFileReader>? loading;
     private WaveOutEvent? output;
     private LoopingLessonStream? stream;
+    private LessonTempoProvider? tempo;
     private bool discardLoad;
     private bool disposed;
     private double positionAnchor;
@@ -19,7 +20,7 @@ public sealed class LessonPlayer : IDisposable
     public string Status { get; private set; } = "Select an MP3 track to load.";
     public bool Loading => loading is not null;
     public bool Ready => stream is not null;
-    public bool Playing => output?.PlaybackState == PlaybackState.Playing;
+    public bool Playing => audibleSeek?.Resume ?? (output?.PlaybackState == PlaybackState.Playing);
     public double Duration => stream?.TotalTime.TotalSeconds ?? 0;
     public double Position => stream?.Seconds ?? 0;
     // The decoder reads ahead. Use the frames reported by the output device for
@@ -29,17 +30,19 @@ public sealed class LessonPlayer : IDisposable
         get
         {
             if (audibleSeek is { } seek) return seek.Seconds;
-            if (stream is null || output is null || output.PlaybackState == PlaybackState.Stopped) return Position;
+            if (stream is null || output is null || tempo is null || output.PlaybackState == PlaybackState.Stopped) return Position;
             try
             {
-                return Math.Clamp(positionAnchor + (output.GetPosition() - outputAnchor) /
-                    (double)stream.WaveFormat.AverageBytesPerSecond, 0, Position);
+                var elapsed = (output.GetPosition() - outputAnchor) / (double)stream.WaveFormat.AverageBytesPerSecond;
+                return LessonTempoProvider.SourceTime(positionAnchor, elapsed, tempo.SpeedPercent,
+                    Position, LoopEnabled, LoopA, LoopB);
             }
             catch (InvalidOperationException) { return Position; }
             catch (MmException) { return Position; }
         }
     }
     public float Volume { get; set; } = 0.25f;
+    public int SpeedPercent { get; private set; } = LessonTempoProvider.Normal;
     public bool LoopEnabled => stream?.LoopEnabled ?? false;
     public double LoopA => stream?.LoopA ?? 0;
     public double LoopB => stream?.LoopB ?? 0;
@@ -66,8 +69,7 @@ public sealed class LessonPlayer : IDisposable
         if (audibleSeek is { } seek && outputStopped)
         {
             audibleSeek = null;
-            Seek(seek.Seconds);
-            if (seek.Resume && Position < (stream?.ClipEnd ?? Duration) - .01) Play();
+            RequestTransport(seek.Seconds, seek.Resume);
         }
         if (loading?.IsCompleted != true) return;
         try
@@ -75,8 +77,10 @@ public sealed class LessonPlayer : IDisposable
             var reader = loading.GetAwaiter().GetResult();
             if (discardLoad) { reader.Dispose(); Status = "Track loading cancelled. Select a track to load again."; return; }
             stream = new LoopingLessonStream(reader);
+            tempo = new LessonTempoProvider(stream);
+            tempo.Reset(0, SpeedPercent);
             output = new WaveOutEvent { DesiredLatency = 100, NumberOfBuffers = 2 };
-            output.Init(stream);
+            output.Init(tempo);
             output.PlaybackStopped += OnPlaybackStopped;
             output.Volume = Math.Clamp(Volume, 0, 1);
             Status = "Loaded. Playback uses the Windows default output. Press Play when ready.";
@@ -95,8 +99,17 @@ public sealed class LessonPlayer : IDisposable
         if (output is null || stream is null) return;
         try
         {
-            if (output.PlaybackState == PlaybackState.Stopped && Position >= (stream.ClipEnd ?? Duration) - 0.01)
-                Seek(LoopEnabled ? LoopA : stream.ClipStart ?? 0);
+            if (output.PlaybackState == PlaybackState.Stopped)
+            {
+                var seconds = Position >= (stream.ClipEnd ?? Duration) - .01
+                    ? (LoopEnabled ? LoopA : stream.ClipStart ?? 0) : Position;
+                if (!outputStopped)
+                {
+                    audibleSeek = (seconds, true);
+                    return;
+                }
+                if (Position != seconds) ApplySeek(seconds);
+            }
             output.Volume = Math.Clamp(Volume, 0, 1);
             outputStopped = false;
             output.Play();
@@ -116,29 +129,34 @@ public sealed class LessonPlayer : IDisposable
     }
     public void Stop()
     {
-        audibleSeek = null;
         discardLoad = true;
         if (Loading) Status = "Cancelling track load...";
-        try
-        {
-            output?.Stop();
-            Seek(stream?.ClipStart ?? 0);
-        }
-        catch (Exception e) { Status = $"Could not stop audio: {e.Message}. Reload the track or check the output device."; }
+        RequestTransport(stream?.ClipStart ?? 0, resume: false);
     }
 
     // Restart only after WaveOut has acknowledged its stop. This clears queued audio
     // from before the scrub instead of showing a new fret while the old buffer plays.
     public void SeekFromScore(double seconds)
     {
-        if (stream is null || output is null || stream.ClipStart is not { } start ||
-            stream.ClipEnd is not { } end || !double.IsFinite(seconds))
-            return;
-        var resume = audibleSeek?.Resume ?? Playing;
-        seconds = Math.Clamp(seconds, start, end);
+        if (stream?.ClipStart is not null) Seek(seconds);
+    }
+
+    private void RequestTransport(double seconds, bool resume)
+    {
+        if (stream is null || output is null || !double.IsFinite(seconds)) return;
+        if (LoopEnabled && (seconds < LoopA || seconds >= LoopB)) seconds = LoopA;
+        seconds = Math.Clamp(seconds, stream.ClipStart ?? 0, stream.ClipEnd ?? Duration);
         if (outputStopped)
         {
-            if (audibleSeek is null) Seek(seconds);
+            if (audibleSeek is null)
+            {
+                try
+                {
+                    ApplySeek(seconds);
+                    if (resume && Position < (stream.ClipEnd ?? Duration) - .01) Play();
+                }
+                catch (Exception e) { Status = $"Could not seek: {e.Message}"; }
+            }
             else audibleSeek = (seconds, resume);
             return;
         }
@@ -158,18 +176,40 @@ public sealed class LessonPlayer : IDisposable
     {
         if (ReferenceEquals(sender, output)) outputStopped = true;
     }
-    public void Seek(double seconds)
+    public void SetSpeed(int percent)
     {
-        if (stream is null) return;
-        stream.SeekSeconds(seconds);
+        percent = LessonTempoProvider.ClampPercent(percent);
+        if (SpeedPercent == percent) return;
+        var seconds = AudiblePosition;
+        SpeedPercent = percent;
+        RequestTransport(seconds, Playing);
+    }
+
+    public void Seek(double seconds) => RequestTransport(seconds, Playing);
+
+    private void ApplySeek(double seconds)
+    {
+        if (stream is null || tempo is null) return;
+        tempo.Reset(seconds, SpeedPercent);
         positionAnchor = stream.Seconds;
         try { outputAnchor = output?.GetPosition() ?? 0; }
         catch (InvalidOperationException) { outputAnchor = 0; }
         catch (MmException) { outputAnchor = 0; }
     }
 
-    public bool SetPlaybackClip(double start, double end) => stream?.SetPlaybackClip(start, end) ?? false;
-    public bool SetLoop(double a, double b, bool enabled) => stream?.SetLoop(a, b, enabled) ?? false;
+    public bool SetPlaybackClip(double start, double end)
+    {
+        if (stream?.SetPlaybackClip(start, end) != true) return false;
+        Seek(start);
+        return true;
+    }
+    public bool SetLoop(double a, double b, bool enabled)
+    {
+        var seconds = AudiblePosition;
+        if (stream?.SetLoop(a, b, enabled) != true) return false;
+        Seek(seconds);
+        return true;
+    }
     public void ApplyVolume() { if (output is not null) output.Volume = Math.Clamp(Volume, 0, 1); }
 
     private void Unload()
@@ -183,6 +223,7 @@ public sealed class LessonPlayer : IDisposable
             old.Dispose();
         }
         outputStopped = true;
+        tempo = null;
         stream?.Dispose();
         stream = null;
     }

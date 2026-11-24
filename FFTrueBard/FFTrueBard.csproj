@@ -20,6 +20,8 @@
 
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="SoundTouch.Net" Version="2.3.2" GeneratePathProperty="true" />
+    <None Include="$(PkgSoundTouch_Net)/LICENSE/LICENSE" Link="SoundTouch.Net-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
     <PackageReference Include="bblanchon.PDFium.Win32" Version="160.0.8179" GeneratePathProperty="true" ExcludeAssets="all" />
     <None Include="$(Pkgbblanchon_PDFium_Win32)/runtimes/win-x64/native/pdfium.dll"
           Link="fftruebard-pdfium.dll" CopyToOutputDirectory="PreserveNewest" />

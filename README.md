@@ -177,6 +177,10 @@ the end of the weekly MP3) to stop playback without splitting the file. Click
 the speaker again to pause or resume. Playback includes the recorded
 announcement and count-in.
 
+Use **Playback speed** above the TAB or in **Lessons → Audio** to choose
+0.50× to 1.50× without changing pitch. The setting is saved and works with
+seeking and A–B loops. Choose **1.00× (normal)** to restore the original speed.
+
 The plugin includes reviewed playhead timings for Exercise 1. They work with
 the supported Guitar Aerobics PDF and matching Week 1 MP3; no separate JSON
 file is needed. A matching local `exercise-NNN.playhead.json` in

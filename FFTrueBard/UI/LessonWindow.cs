@@ -44,6 +44,7 @@ public sealed partial class ConfigWindow
         catalogPath = config.LessonCatalogFile ?? "";
         config.LessonExercise = Math.Clamp(config.LessonExercise, 1, 365);
         lessonPlayer.Volume = float.IsFinite(config.LessonVolume) ? Math.Clamp(config.LessonVolume, 0, 1) : 0.25f;
+        lessonPlayer.SetSpeed(config.LessonSpeedPercent);
         ReadLessonEntry();
     }
 
@@ -84,19 +85,21 @@ public sealed partial class ConfigWindow
                 try
                 {
                     var (start, end) = cue.Cue.Within(lessonPlayer.Duration);
-                    if (!lessonPlayer.SetLoop(start, end, false))
-                        throw new InvalidDataException("The cue cannot be represented as an audio range.");
-                    lessonPlayer.Seek(start);
                     loopA = (float)start;
                     loopB = (float)end;
                     if (cue.PlayWhenReady)
                     {
                         if (!lessonPlayer.SetPlaybackClip(start, end))
                             throw new InvalidDataException("The exercise range could not be played.");
-                        lessonPlayer.Seek(start);
                         StartLessonPlayback();
                     }
-                    else catalogStatus = "Exercise cue loaded without playback. Press Play; enable/apply A-B looping if wanted.";
+                    else
+                    {
+                        if (!lessonPlayer.SetLoop(start, end, false))
+                            throw new InvalidDataException("The cue cannot be represented as an audio range.");
+                        lessonPlayer.Seek(start);
+                        catalogStatus = "Exercise cue loaded without playback. Press Play; enable/apply A-B looping if wanted.";
+                    }
                 }
                 catch (Exception e)
                 {
@@ -274,17 +277,17 @@ public sealed partial class ConfigWindow
         if (ImGui.Button("Pause audio")) lessonPlayer.Pause();
         ImGui.SameLine();
         if (ImGui.Button("Stop audio")) lessonPlayer.Stop();
-        var position = (float)lessonPlayer.Position;
+        var position = (float)lessonPlayer.AudiblePosition;
         ImGui.TextUnformatted($"{(lessonPlayer.Playing ? "Playing" : "Paused / stopped")} | {position:0.0} / {lessonPlayer.Duration:0.0} seconds");
         if (ImGui.SliderFloat("Seek (seconds)", ref position, 0, (float)Math.Max(0.1, lessonPlayer.Duration), "%.1f")) lessonPlayer.Seek(position);
         if (ImGui.TreeNode("A-B loop"))
         {
             ImGui.InputFloat("Loop A (seconds)", ref loopA, 1, 10, "%.2f");
             ImGui.SameLine();
-            if (ImGui.Button("A = current")) loopA = (float)lessonPlayer.Position;
+            if (ImGui.Button("A = current")) loopA = (float)lessonPlayer.AudiblePosition;
             ImGui.InputFloat("Loop B (seconds)", ref loopB, 1, 10, "%.2f");
             ImGui.SameLine();
-            if (ImGui.Button("B = current")) loopB = (float)lessonPlayer.Position;
+            if (ImGui.Button("B = current")) loopB = (float)lessonPlayer.AudiblePosition;
             ImGui.Checkbox("Enable A-B loop", ref lessonLoop);
             if (ImGui.Button("Apply loop boundaries"))
             {
@@ -296,6 +299,7 @@ public sealed partial class ConfigWindow
             ImGui.TreePop();
         }
         ImGui.EndDisabled();
+        DrawLessonSpeed();
         var volume = lessonPlayer.Volume;
         if (ImGui.SliderFloat("Lesson playback volume", ref volume, 0, 1, "%.2f"))
         {
@@ -304,6 +308,29 @@ public sealed partial class ConfigWindow
             save();
         }
         ImGui.TextDisabled("Use headphones. Playback uses the Windows default output.");
+    }
+
+    private static readonly int[] LessonSpeeds = [50, 60, 70, 75, 80, 90, 100, 110, 120, 125, 130, 140, 150];
+
+    private void DrawLessonSpeed()
+    {
+        var speed = lessonPlayer.SpeedPercent;
+        ImGui.SetNextItemWidth(Math.Min(112 * ReaderScale, Math.Max(1, ImGui.GetContentRegionAvail().X -
+            ImGui.CalcTextSize("Playback speed").X - ImGui.GetStyle().ItemInnerSpacing.X)));
+        if (!ImGui.BeginCombo("Playback speed", $"{speed / 100d:0.00}×")) return;
+        foreach (var percent in LessonSpeeds)
+        {
+            var selected = percent == speed;
+            var label = percent == 100 ? "1.00× (normal)" : $"{percent / 100d:0.00}×";
+            if (ImGui.Selectable(label, selected) && !selected)
+            {
+                lessonPlayer.SetSpeed(percent);
+                config.LessonSpeedPercent = percent;
+                save();
+            }
+            if (selected) ImGui.SetItemDefaultFocus();
+        }
+        ImGui.EndCombo();
     }
 
     private void DrawLessonAudio()

@@ -116,6 +116,8 @@ internal static class LessonTests
             check(loop.SetLoop(0, 1, false) && loop.ClipEnd is null, "Manual audio controls can restore full-track playback");
         }
 
+        CheckLessonTempo(check);
+
         static bool Near(double a, double b) => Math.Abs(a - b) < .000001;
         var scoreRow = new LessonTabStaff(.1, .4, .9, .5);
         var mapFixture = new LessonScorePlayhead(1, 1, 1, true, "", [
@@ -192,5 +194,77 @@ internal static class LessonTests
             }
             Console.WriteLine($"Local media check: {library.Exercises.Count} exercise/tuning and {library.Rhythm.Count} rhythm tracks opened read-only.");
         }
+    }
+
+    private static void CheckLessonTempo(Action<bool, string> check)
+    {
+        const int sampleRate = 24000;
+        var format = WaveFormat.CreateIeeeFloatWaveFormat(sampleRate, 2);
+        var samples = new float[sampleRate * 3 * format.Channels];
+        for (var frame = 0; frame < samples.Length / 2; frame++)
+        {
+            for (var channel = 0; channel < 2; channel++)
+                samples[2 * frame + channel] = frame >= sampleRate && frame < 2 * sampleRate
+                    ? .5f * MathF.Sin(2 * MathF.PI * (channel == 0 ? 440 : 660) * frame / sampleRate)
+                    : 4f;
+        }
+        var bytes = new byte[samples.Length * sizeof(float)];
+        Buffer.BlockCopy(samples, 0, bytes, 0, bytes.Length);
+        using var source = new RawSourceWaveStream(new MemoryStream(bytes), format);
+        using var clip = new LoopingLessonStream(source);
+        clip.SetPlaybackClip(1, 2);
+        var player = new LessonTempoProvider(clip);
+        var buffer = new byte[8192 + 16];
+        var output = new float[buffer.Length / sizeof(float)];
+        float[] ReadAll()
+        {
+            var result = new List<float>();
+            for (var i = 0; i < 100; i++)
+            {
+                var count = player.Read(buffer, 16, 8192);
+                if (count == 0) return result.ToArray();
+                Buffer.BlockCopy(buffer, 16, output, 0, count);
+                result.AddRange(output.AsSpan(0, count / sizeof(float)).ToArray());
+            }
+            throw new InvalidOperationException("Stretched exercise did not stop.");
+        }
+
+        foreach (var speed in new[] { 50, 75, 100, 125, 150 })
+        {
+            player.Reset(1, speed);
+            var stretched = ReadAll();
+            var duration = stretched.Length / (double)(2 * sampleRate);
+            check(Math.Abs(duration - 100d / speed) < .01 && stretched.All(s => Math.Abs(s) < .6),
+                $"At {speed}% playback duration scales and audio from either side of the clip stays out");
+            if (speed == 100)
+                check(stretched.AsSpan().SequenceEqual(samples.AsSpan(2 * sampleRate, 2 * sampleRate)),
+                    "Normal speed sends the original decoded samples without stretching");
+            var start = sampleRate / 5;
+            var end = 2 * sampleRate / 5;
+            for (var channel = 0; channel < 2; channel++)
+            {
+                var crossings = 0;
+                for (var frame = start; frame < end; frame++)
+                    if (stretched[2 * (frame - 1) + channel] <= 0 && stretched[2 * frame + channel] > 0) crossings++;
+                check(Math.Abs(crossings * 5 - (channel == 0 ? 440 : 660)) <= 15,
+                    $"At {speed}% channel {channel + 1} preserves pitch");
+            }
+        }
+
+        player.Reset(1, 50);
+        player.Read(buffer, 16, 8192);
+        player.Reset(1.9, 125);
+        var tail = ReadAll();
+        check(Math.Abs(tail.Length / (double)(2 * sampleRate) - .08) < .005 && tail.Any(s => Math.Abs(s) > .1),
+            "Seeking and changing speed discards buffered data and finishes a short clip tail");
+
+        clip.SetLoop(1, 2, true);
+        player.Reset(1.8, 75);
+        check(Enumerable.Range(0, 25).All(_ => player.Read(buffer, 16, 8192) == 8192) &&
+            clip.Seconds >= 1 && clip.Seconds < 2, "Stretched playback loops without reading outside the A–B range");
+        check(Math.Abs(LessonTempoProvider.SourceTime(4, 2, 50, 7, false, 0, 0) - 5) < 1e-6 &&
+            Math.Abs(LessonTempoProvider.SourceTime(4, 2, 150, 6.8, false, 0, 0) - 6.8) < 1e-6 &&
+            Math.Abs(LessonTempoProvider.SourceTime(1.5, 3, 150, 1.8, true, 1, 2) - 1) < 1e-6,
+            "Playhead uses original recording seconds, bounded by the decoder or wrapped by the loop");
     }
 }

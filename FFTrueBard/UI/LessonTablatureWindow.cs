@@ -153,6 +153,7 @@ public sealed partial class ConfigWindow
         var playback = tablatureAudioSeconds is { } start && track is not null &&
             (exercise == track.Last || tablatureNextAudioSeconds is { } end && end > start)
             ? new ReaderAudio(exercise, track, start, tablatureNextAudioSeconds) : null;
+        if (playback is not null) DrawLessonSpeed();
         DrawScorePlate(texture, crop, audioCrop, playback);
         DrawReaderAudioStatus(playback);
         var step = SelectedCatalogExercise?.Steps.ElementAtOrDefault(lessonStep);

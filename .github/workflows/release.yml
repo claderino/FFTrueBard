@@ -77,6 +77,18 @@ jobs:
             Copy-Item "$($upstream.FullName)/LICENSE" $notices.FullName
             Copy-Item "$($upstream.FullName)/licenses/*" $notices.FullName
 
+            # SoundTouch.Net ships as a separate LGPL library with its license and matching source.
+            if (-not (Test-Path "$outDir/SoundTouch.Net.dll") -or -not (Test-Path "$outDir/SoundTouch.Net-LICENSE.txt")) {
+              throw 'SoundTouch.Net or its license is missing.'
+            }
+            $tempoNotices = New-Item -ItemType Directory -Path "$outDir/soundtouch" -Force
+            Copy-Item "$outDir/SoundTouch.Net-LICENSE.txt" (Join-Path $tempoNotices.FullName 'LICENSE.txt')
+            $tempoSource = Join-Path $tempoNotices.FullName 'SoundTouch.Net-2.3.2-source.zip'
+            Invoke-WebRequest -Uri https://codeload.github.com/owoudenberg/soundtouch.net/zip/98e5b8fd2f8efed0ddf7c8f66b435bfb231659dc -OutFile $tempoSource
+            if ((Get-FileHash $tempoSource).Hash -ne '6DB11C905DFADDAF2990EFB3FCC5C29DED2A62AEE3C3849AF62C600BADA69C62') {
+              throw 'Unexpected SoundTouch.Net source archive.'
+            }
+
             $manifest = [ordered]@{
               Author              = 'claderino'
               Name                = 'FFTrueBard'
@@ -94,7 +106,7 @@ jobs:
               Set-Content -Encoding utf8 (Join-Path $outDir 'FFTrueBard.json')
 
             $files = Get-ChildItem $outDir -File | Where-Object { $_.Extension -in '.dll', '.json' }
-            Compress-Archive -Path ($files.FullName + @($notices.FullName)) -DestinationPath .\FFTrueBard.zip -Force
+            Compress-Archive -Path ($files.FullName + @($notices.FullName, $tempoNotices.FullName)) -DestinationPath .\FFTrueBard.zip -Force
             Write-Host "Packaged manually from $outDir"
 
       - name: Generate pluginmaster.json
