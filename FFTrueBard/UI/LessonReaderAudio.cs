@@ -11,6 +11,10 @@ public sealed partial class ConfigWindow
     private ReaderAudio? activeReaderAudio;
     private ReaderAudio? readerScrubAudio;
     private double readerScrubReferenceSeconds;
+    private LessonScoreMark? readerLoopTarget;
+    private double? readerLoopA;
+    private double? readerLoopB;
+    private string? readerLoopProblem;
     private bool readerRevealedStaff;
     private string readerAudioError = "";
 
@@ -23,6 +27,9 @@ public sealed partial class ConfigWindow
         {
             LoadLessonTrack(audio.Track, new LessonAudioCue("", audio.Seconds, audio.EndSeconds), playWhenReady: true);
             activeReaderAudio = audio;
+            readerLoopA = readerLoopB = null;
+            readerLoopTarget = null;
+            readerLoopProblem = null;
             readerRevealedStaff = false;
         }
         catch (Exception e)
@@ -60,6 +67,9 @@ public sealed partial class ConfigWindow
             ImGui.TextDisabled(label);
             if (!mapping.NoteSynced && ImGui.IsItemHovered())
                 ImGui.SetTooltip(tablaturePlayheadProblem ?? "The note timings don't match this TAB row.");
+            if (ready && mapping.NoteSynced && lessonPlayer.LoopEnabled)
+                ImGui.TextDisabled($"TAB loop: {RelativeLoopTime(lessonPlayer.LoopA, audio)} to {RelativeLoopTime(lessonPlayer.LoopB, audio)}");
+            if (ready && readerLoopProblem is not null) ImGui.TextWrapped(readerLoopProblem);
         }
         else if (audio is not null) ImGui.TextDisabled("This TAB row could not be located for seeking.");
     }
@@ -101,10 +111,16 @@ public sealed partial class ConfigWindow
                 ImGui.SetCursorScreenPos(hitMin);
                 ImGui.BeginDisabled(ReaderAudioLoading);
                 ImGui.InvisibleButton("##score_audio_scrub", hitMax - hitMin);
-                double MouseTime()
+                double MouseScoreX()
                 {
                     var x = Math.Clamp((ImGui.GetMousePos().X - rowMin.X) / (rowMax.X - rowMin.X), 0, 1);
-                    return mapping.TimeAt(mapping.Left + x * (mapping.Right - mapping.Left), readerScrubReferenceSeconds);
+                    return mapping.Left + x * (mapping.Right - mapping.Left);
+                }
+                if (mapping.NoteSynced && !ReaderAudioLoading && ImGui.IsItemClicked(ImGuiMouseButton.Right))
+                {
+                    readerLoopTarget = mapping.NoteAtX(MouseScoreX(), position);
+                    readerLoopProblem = null;
+                    ImGui.OpenPopup("##tab_ab_loop");
                 }
                 if (ImGui.IsItemActivated())
                 {
@@ -113,7 +129,7 @@ public sealed partial class ConfigWindow
                 }
                 if (readerScrubAudio == audio && ImGui.IsItemActive())
                 {
-                    position = MouseTime();
+                    position = mapping.TimeAt(MouseScoreX(), readerScrubReferenceSeconds);
                     ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
                     ImGui.SetTooltip($"Seek to {Math.Max(0, position - audio.Seconds):0.00} s");
                 }
@@ -121,7 +137,7 @@ public sealed partial class ConfigWindow
                 {
                     if (ImGui.IsMouseReleased(ImGuiMouseButton.Left))
                     {
-                        position = MouseTime();
+                        position = mapping.TimeAt(MouseScoreX(), readerScrubReferenceSeconds);
                         lessonPlayer.SeekFromScore(position);
                     }
                     readerScrubAudio = null;
@@ -130,11 +146,12 @@ public sealed partial class ConfigWindow
                 {
                     ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
                     ImGui.SetTooltip(mapping.NoteSynced
-                        ? "Click a fret to seek to that note, or drag across TAB."
+                        ? "Click or drag to seek. Right-click a fret to set A–B loop points."
                         : "Scrub the recording by elapsed time. This exercise has no matching reviewed note map.");
                 }
                 ImGui.EndDisabled();
                 ImGui.SetCursorScreenPos(cursor);
+                if (mapping.NoteSynced) DrawReaderLoopMenu(audio);
             }
             var playheadX = Project(mapping.XAt(position), staff.Top).X;
             draw.PushClipRect(imageOrigin, imageOrigin + imageSize, true);
@@ -182,5 +199,42 @@ public sealed partial class ConfigWindow
         }
         ImGui.EndDisabled();
         ImGui.SetCursorScreenPos(cursor);
+    }
+
+    private static string RelativeLoopTime(double seconds, ReaderAudio audio) => $"{seconds - audio.Seconds:0.00} s";
+
+    private void DrawReaderLoopMenu(ReaderAudio audio)
+    {
+        if (!ImGui.BeginPopup("##tab_ab_loop")) return;
+        if (readerLoopTarget is { } note && !ReaderAudioLoading)
+        {
+            if (ImGui.MenuItem($"Set A at note start ({RelativeLoopTime(note.Start, audio)})"))
+                readerLoopA = note.Start;
+            if (ImGui.MenuItem($"Set B at note end ({RelativeLoopTime(note.End, audio)})"))
+                readerLoopB = note.End;
+
+            ImGui.Separator();
+            string Point(double? value) => value is { } t ? RelativeLoopTime(t, audio) : "not set";
+            ImGui.TextDisabled($"A: {Point(readerLoopA)}   B: {Point(readerLoopB)}");
+            var valid = readerLoopA is { } a && readerLoopB is { } b && b - a >= .1;
+            if (readerLoopA is not null && readerLoopB is not null && !valid)
+                ImGui.TextDisabled("B must be at least 0.1 s after A.");
+            ImGui.BeginDisabled(!valid);
+            if (ImGui.MenuItem("Play A–B loop") && readerLoopA is { } start && readerLoopB is { } end)
+            {
+                if (lessonPlayer.SetScoreLoop(start, end))
+                {
+                    loopA = (float)start;
+                    loopB = (float)end;
+                    lessonLoop = true;
+                    StartLessonPlayback();
+                }
+                else readerLoopProblem = "The loop must be inside the exercise's audio range.";
+            }
+            ImGui.EndDisabled();
+            if (lessonPlayer.LoopEnabled && ImGui.MenuItem("Turn off TAB loop") && lessonPlayer.ClearScoreLoop())
+                lessonLoop = false;
+        }
+        ImGui.EndPopup();
     }
 }

@@ -193,6 +193,12 @@ across the strings to move within the phrase. If a fret is played more than
 once, seeking uses the current pass or the nearest occurrence. When no map
 matches, use the audio-only scrub strip below the strings.
 
+To loop part of a note-synced exercise, start playback from the printed speaker.
+Right-click the first fret and select **Set A at note start**. Right-click the
+last fret and select **Set B at note end**, then reopen the menu and select
+**Play A–B loop**. Use **Turn off TAB loop** to continue within the exercise.
+For repeated notes, set the points while listening to the pass you want to loop.
+
 The plugin renders one view at a time in memory. It doesn't copy or upload
 pages, infer note timing from the notation, or grade what you play from it.
 

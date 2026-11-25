@@ -141,6 +141,21 @@ public sealed class LessonPlayer : IDisposable
         if (stream?.ClipStart is not null) Seek(seconds);
     }
 
+    public bool SetScoreLoop(double a, double b)
+    {
+        if (stream?.SetClipLoop(a, b) != true) return false;
+        Seek(a);
+        return true;
+    }
+
+    public bool ClearScoreLoop()
+    {
+        var seconds = AudiblePosition;
+        if (stream?.ClearClipLoop() != true) return false;
+        Seek(seconds);
+        return true;
+    }
+
     private void RequestTransport(double seconds, bool resume)
     {
         if (stream is null || output is null || !double.IsFinite(seconds)) return;
@@ -286,6 +301,31 @@ public sealed class LoopingLessonStream(WaveStream source) : WaveStream
 
     private bool ValidRange(double a, double b) =>
         double.IsFinite(a) && double.IsFinite(b) && a >= 0 && b <= TotalTime.TotalSeconds && b - a >= 0.1;
+
+    public bool SetClipLoop(double a, double b)
+    {
+        if (!ValidRange(a, b)) return false;
+        lock (gate)
+        {
+            var start = At(a);
+            var end = At(b);
+            if (clip is not { } c || start < c.Start || end > c.End || end <= start) return false;
+            loopStart = start;
+            loopEnd = end;
+            LoopEnabled = true;
+            return true;
+        }
+    }
+
+    public bool ClearClipLoop()
+    {
+        lock (gate)
+        {
+            if (clip is null || !LoopEnabled) return false;
+            LoopEnabled = false;
+            return true;
+        }
+    }
 
     public bool SetLoop(double a, double b, bool enabled)
     {
