@@ -1,5 +1,7 @@
 {
   "pdfSha256": "2e46132f4db034dc63ea613fd96eb49c57a81f87cb7899f6ab4b071dc9810e41",
+  "cueStartSeconds": 0,
+  "cueEndSeconds": 11,
   "map": {
     "schemaVersion": 1,
     "exercise": 1,

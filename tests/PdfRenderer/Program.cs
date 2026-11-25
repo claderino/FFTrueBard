@@ -1,5 +1,8 @@
+using System.Reflection.Metadata;
+using System.Reflection.PortableExecutable;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
 using FFTrueBard.Lessons;
 
 if (args.Length == 0)
@@ -34,6 +37,56 @@ File.WriteAllText(damaged, "not a PDF");
 Reject(() => LessonPdfRenderer.Render(pluginDirectory, damaged, 1, null), "could not be opened");
 Console.WriteLine("PDF render checks passed: host COM isolation, Unicode paths, full page, crop, and invalid input.");
 
+var bookIndex = LessonTablatureIndex.BundledIndexForValidation();
+using var bookStream = typeof(LessonTablatureIndex).Assembly.GetManifestResourceStream(LessonTablatureIndex.BundledResource)!;
+using var bookJson = JsonDocument.Parse(bookStream);
+var bookHash = bookJson.RootElement.GetProperty("pdfSha256").GetString();
+var playheads = new Dictionary<int, LessonScorePlayhead.BundledMap>();
+foreach (var name in typeof(LessonScorePlayhead).Assembly.GetManifestResourceNames()
+    .Where(name => name.StartsWith(LessonScorePlayhead.BundledPrefix, StringComparison.Ordinal)))
+{
+    Check(name.EndsWith(LessonScorePlayhead.BundledSuffix, StringComparison.Ordinal) &&
+        name.Length == LessonScorePlayhead.BundledPrefix.Length + 3 + LessonScorePlayhead.BundledSuffix.Length,
+        $"Invalid playhead resource name: {name}");
+    var number = name[LessonScorePlayhead.BundledPrefix.Length..^LessonScorePlayhead.BundledSuffix.Length];
+    Check(number.All(char.IsAsciiDigit), $"Invalid playhead exercise number: {name}");
+    var exercise = int.Parse(number);
+    var map = LessonScorePlayhead.ReadBundled(exercise)
+        ?? throw new InvalidOperationException($"Missing or out-of-range playhead resource: {name}");
+    Check(map.PdfSha256 == bookHash && bookIndex.Find(exercise)?.PdfPage == map.Map.PdfPage,
+        $"Exercise {exercise} playhead belongs to the bundled book and indexed page");
+    Check(map.Map.Notes[0].Start > map.CueStartSeconds, $"Exercise {exercise} leaves the narration and count-in off the TAB");
+    var week = Math.Min(52, (exercise - 1) / 7 + 1);
+    var endOfWeek = exercise == (week == 52 ? 365 : week * 7);
+    Check(endOfWeek == (map.CueEndSeconds is null), $"Exercise {exercise} uses the correct kind of cue end");
+    playheads.Add(exercise, map);
+}
+Check(playheads.Count == 365, "All 365 reviewed exercise timings are required");
+using (var plugin = new PEReader(File.OpenRead(Path.Combine(pluginDirectory, "FFTrueBard.dll"))))
+{
+    var metadata = plugin.GetMetadataReader();
+    var resources = plugin.GetSectionData(plugin.PEHeaders.CorHeader!.ResourcesDirectory.RelativeVirtualAddress);
+    var verified = new HashSet<string>(StringComparer.Ordinal);
+    var assembly = typeof(LessonScorePlayhead).Assembly;
+    foreach (var handle in metadata.ManifestResources)
+    {
+        var resource = metadata.GetManifestResource(handle);
+        var name = metadata.GetString(resource.Name);
+        if (!name.StartsWith(LessonScorePlayhead.BundledPrefix, StringComparison.Ordinal)) continue;
+        Check(resource.Implementation.IsNil && verified.Add(name), $"Expected one embedded resource: {name}");
+        using var expected = assembly.GetManifestResourceStream(name)
+            ?? throw new InvalidOperationException($"Unexpected plugin timing resource: {name}");
+        using var bytes = new MemoryStream();
+        expected.CopyTo(bytes);
+        var reader = resources.GetReader((int)resource.Offset, resources.Length - (int)resource.Offset);
+        var size = reader.ReadInt32();
+        Check(size == bytes.Length && reader.ReadBytes(size).AsSpan().SequenceEqual(bytes.GetBuffer().AsSpan(0, size)),
+            $"Plugin timing resource differs from the validated set: {name}");
+    }
+    Check(verified.Count == playheads.Count, "The built plugin embeds the complete reviewed timing set");
+}
+Console.WriteLine($"Validated {playheads.Count} bundled timing maps against the coordinate index.");
+
 if (args.Length > 1)
 {
     // Copy only the user's PDF, without the local sidecar or catalog.
@@ -58,6 +111,15 @@ if (args.Length > 1)
             Check(image.NextAudioSeconds > image.AudioSeconds, $"Exercise {exercise} ends at the next printed cue");
         if (exercise <= 3)
             Check(image.AudioSeconds == new[] { 0, 11, 23 }[exercise - 1], $"Exercise {exercise} has the expected cue");
+        var map = playheads[exercise];
+        Check(image.AudioSeconds == map.CueStartSeconds && image.NextAudioSeconds == map.CueEndSeconds,
+             $"Exercise {exercise} playhead matches the printed cues");
+        var cursor = new LessonScoreCursor(image.TabStaff!.Value, map.CueStartSeconds,
+             map.PlaybackEndSeconds ?? double.PositiveInfinity, map.Map);
+        var first = map.Map.Notes[0];
+        Check(cursor.NoteSynced && !cursor.ShowsNoteAt(map.CueStartSeconds) &&
+            Math.Abs(cursor.TimeAt(first.X + first.Width * .5) - first.Start) < .000001,
+            $"Exercise {exercise} matches the rendered TAB and first fret seeks past the count-in");
     }
     Console.WriteLine("Rendered and located audio markers and TAB rows for all 365 indexed excerpts with no sidecar.");
 }

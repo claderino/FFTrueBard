@@ -1,0 +1,62 @@
+{
+  "pdfSha256": "2e46132f4db034dc63ea613fd96eb49c57a81f87cb7899f6ab4b071dc9810e41",
+  "cueStartSeconds": 23,
+  "cueEndSeconds": 32,
+  "map": {
+    "schemaVersion": 1,
+    "exercise": 276,
+    "pdfPage": 85,
+    "reviewed": true,
+    "audioSha256": "c58f58f839a338d03833f9362cd06ab351f9e6493f961fed6d5a0ae83c24f394",
+    "notes": [
+      {
+        "start": 25.97,
+        "end": 26.246,
+        "x": 0.20299,
+        "y": 0.90402,
+        "width": 0.00475,
+        "height": 0.0135
+      },
+      {
+        "start": 26.246,
+        "end": 27.925,
+        "x": 0.26253,
+        "y": 0.9111,
+        "width": 0.00471,
+        "height": 0.00645
+      },
+      {
+        "start": 27.925,
+        "end": 28.153,
+        "x": 0.42577,
+        "y": 0.90415,
+        "width": 0.00475,
+        "height": 0.01337
+      },
+      {
+        "start": 28.153,
+        "end": 29.89,
+        "x": 0.48543,
+        "y": 0.9111,
+        "width": 0.00471,
+        "height": 0.00645
+      },
+      {
+        "start": 29.89,
+        "end": 30.14,
+        "x": 0.67189,
+        "y": 0.90416,
+        "width": 0.00475,
+        "height": 0.02043
+      },
+      {
+        "start": 30.14,
+        "end": 31.86159,
+        "x": 0.73133,
+        "y": 0.9183,
+        "width": 0.00474,
+        "height": 0.00632
+      }
+    ]
+  }
+}

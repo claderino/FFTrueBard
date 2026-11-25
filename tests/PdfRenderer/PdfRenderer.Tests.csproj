@@ -17,5 +17,7 @@
     <Compile Include="../../FFTrueBard/Lessons/LessonTablatureIndex.cs" Link="LessonTablatureIndex.cs" />
     <EmbeddedResource Include="../../FFTrueBard/Lessons/Indexes/guitar-aerobics.tablature.json"
                       LogicalName="FFTrueBard.Lessons.GuitarAerobics.tablature.json" />
+    <EmbeddedResource Include="../../FFTrueBard/Lessons/Indexes/guitar-aerobics-*.playhead.json"
+                      LogicalName="FFTrueBard.Lessons.Indexes.%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

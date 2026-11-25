@@ -10,14 +10,14 @@ public sealed partial class ConfigWindow
 {
     private sealed record TablatureRequest(string Path, int Page, LessonTablatureCrop? Crop,
         LessonTablatureCrop? AudioCrop, LessonTablatureEntry? NextAudio, string? PlayheadTrack);
-    private sealed record LoadedTablature(IDalamudTextureWrap Texture, int? AudioSeconds, int? NextAudioSeconds,
+    private sealed record LoadedTablature(IDalamudTextureWrap Texture, int? AudioSeconds, double? PlaybackEndSeconds,
         LessonTabStaff? TabStaff, LessonScorePlayhead? Playhead, string? PlayheadProblem);
 
     private TablatureRequest? tablatureRequest;
     private Task<LoadedTablature>? tablatureLoad;
     private IDalamudTextureWrap? tablatureTexture;
     private int? tablatureAudioSeconds;
-    private int? tablatureNextAudioSeconds;
+    private double? tablaturePlaybackEndSeconds;
     private LessonTabStaff? tablatureStaff;
     private LessonScorePlayhead? tablaturePlayhead;
     private string? tablaturePlayheadProblem;
@@ -125,7 +125,7 @@ public sealed partial class ConfigWindow
             tablatureTexture?.Dispose();
             tablatureTexture = null;
             tablatureAudioSeconds = null;
-            tablatureNextAudioSeconds = null;
+            tablaturePlaybackEndSeconds = null;
             tablatureStaff = null;
             tablaturePlayhead = null;
             tablaturePlayheadProblem = null;
@@ -151,8 +151,8 @@ public sealed partial class ConfigWindow
         }
 
         var playback = tablatureAudioSeconds is { } start && track is not null &&
-            (exercise == track.Last || tablatureNextAudioSeconds is { } end && end > start)
-            ? new ReaderAudio(exercise, track, start, tablatureNextAudioSeconds) : null;
+            (exercise == track.Last || tablaturePlaybackEndSeconds is { } end && end > start)
+            ? new ReaderAudio(exercise, track, start, tablaturePlaybackEndSeconds) : null;
         if (playback is not null) DrawLessonSpeed();
         DrawScorePlate(texture, crop, audioCrop, playback);
         DrawReaderAudioStatus(playback);
@@ -210,7 +210,7 @@ public sealed partial class ConfigWindow
                 {
                     tablatureTexture = loaded.Texture;
                     tablatureAudioSeconds = loaded.AudioSeconds;
-                    tablatureNextAudioSeconds = loaded.NextAudioSeconds;
+                    tablaturePlaybackEndSeconds = loaded.PlaybackEndSeconds;
                     tablatureStaff = loaded.TabStaff;
                     tablaturePlayhead = loaded.Playhead;
                     tablaturePlayheadProblem = loaded.PlayheadProblem;
@@ -235,12 +235,20 @@ public sealed partial class ConfigWindow
         tablatureLoad = Task.Run(async () =>
         {
             var image = LessonPdfRenderer.Render(pluginDirectory, request.Path, request.Page, request.Crop, request.AudioCrop, request.NextAudio);
-            var (playhead, problem) = request.PlayheadTrack is { } track && image.AudioSeconds is { } start
+            var timing = request.PlayheadTrack is { } track && image.AudioSeconds is { } start
                 ? LessonScorePlayhead.FindForReader(root, request.Path, exercise, request.Page, track, start, image.NextAudioSeconds)
-                : (null, null);
+                : new(null, null);
+            var playbackEnd = (double?)image.NextAudioSeconds;
+            if (timing is { Map: { } map, MeasuredEndSeconds: { } measured })
+            {
+                if (image.TabStaff is { } staff && LessonScoreCursor.MatchesStaff(staff, map, image.AudioSeconds!.Value, measured))
+                    playbackEnd = measured;
+                else
+                    timing = new(null, "The measured end and note timings don't match this TAB row.");
+            }
             var texture = await provider.CreateFromRawAsync(RawImageSpecification.Bgra32(image.Width, image.Height), image.Pixels,
                 "FFTrueBard tablature").ConfigureAwait(false);
-            return new LoadedTablature(texture, image.AudioSeconds, image.NextAudioSeconds, image.TabStaff, playhead, problem);
+            return new LoadedTablature(texture, image.AudioSeconds, playbackEnd, image.TabStaff, timing.Map, timing.Problem);
         });
     }
 
