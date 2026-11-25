@@ -173,23 +173,25 @@ opens your usual PDF viewer.
 
 For the supported Guitar Aerobics PDF, click the printed speaker or timestamp
 to play only that exercise. The reader uses the next printed timestamp (or
-the end of the weekly MP3) to stop playback without splitting the file. Click
-the speaker again to pause or resume. Playback includes the recorded
-announcement and count-in.
+the end of the weekly MP3) by default. When a matching reviewed timing map
+shows that the printed cutoff would truncate the phrase, playback uses the
+measured end instead. Click the speaker again to pause or resume. Playback
+includes the recorded announcement and count-in without splitting the file.
 
 Use **Playback speed** above the TAB or in **Lessons → Audio** to choose
 0.50× to 1.50× without changing pitch. The setting is saved and works with
 seeking and A–B loops. Choose **1.00× (normal)** to restore the original speed.
 
-The plugin includes reviewed playhead timings for Exercise 1. They work with
-the supported Guitar Aerobics PDF and matching Week 1 MP3; no separate JSON
-file is needed. A matching local `exercise-NNN.playhead.json` in
+The plugin includes reviewed playhead timings for all 365 exercises. They work
+with the supported Guitar Aerobics PDF and matching weekly MP3s; no separate
+JSON file is needed. A matching local `exercise-NNN.playhead.json` in
 `fftruebard-lessons` takes priority.
 
 With a matching note map, the vertical TAB playhead appears at the first
 note, not during the count-in. Click a fret to seek to its onset, or drag
-across the strings to move within the phrase. For other recordings and
-exercises without a map, use the audio-only scrub strip below the strings.
+across the strings to move within the phrase. If a fret is played more than
+once, seeking uses the current pass or the nearest occurrence. When no map
+matches, use the audio-only scrub strip below the strings.
 
 The plugin renders one view at a time in memory. It doesn't copy or upload
 pages, infer note timing from the notation, or grade what you play from it.

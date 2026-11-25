@@ -20,7 +20,7 @@
     <Compile Include="../FFTrueBard/Lessons/LessonScorePlayhead.cs" Link="LessonScorePlayhead.cs" />
     <Compile Include="../FFTrueBard/Lessons/LessonScoreCursor.cs" Link="LessonScoreCursor.cs" />
     <EmbeddedResource Include="../FFTrueBard/Lessons/Indexes/guitar-aerobics.tablature.json" LogicalName="FFTrueBard.Lessons.GuitarAerobics.tablature.json" />
-    <EmbeddedResource Include="../FFTrueBard/Lessons/Indexes/guitar-aerobics-001.playhead.json" LogicalName="FFTrueBard.Lessons.GuitarAerobics.Exercise001.playhead.json" />
+    <EmbeddedResource Include="../FFTrueBard/Lessons/Indexes/guitar-aerobics-*.playhead.json" LogicalName="FFTrueBard.Lessons.Indexes.%(Filename)%(Extension)" />
     <Compile Include="../FFTrueBard/UI/VisualizerData.cs" Link="VisualizerData.cs" />
     <Compile Include="../FFTrueBard/Detection/YinPitch.cs" Link="YinPitch.cs" />
     <Compile Include="../FFTrueBard/Detection/PitchProcessor.cs" Link="PitchProcessor.cs" />

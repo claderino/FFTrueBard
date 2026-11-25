@@ -6,10 +6,11 @@ namespace FFTrueBard.UI;
 
 public sealed partial class ConfigWindow
 {
-    private sealed record ReaderAudio(int Exercise, LessonTrack Track, int Seconds, int? EndSeconds);
+    private sealed record ReaderAudio(int Exercise, LessonTrack Track, int Seconds, double? EndSeconds);
 
     private ReaderAudio? activeReaderAudio;
     private ReaderAudio? readerScrubAudio;
+    private double readerScrubReferenceSeconds;
     private bool readerRevealedStaff;
     private string readerAudioError = "";
 
@@ -103,9 +104,13 @@ public sealed partial class ConfigWindow
                 double MouseTime()
                 {
                     var x = Math.Clamp((ImGui.GetMousePos().X - rowMin.X) / (rowMax.X - rowMin.X), 0, 1);
-                    return mapping.TimeAt(mapping.Left + x * (mapping.Right - mapping.Left));
+                    return mapping.TimeAt(mapping.Left + x * (mapping.Right - mapping.Left), readerScrubReferenceSeconds);
                 }
-                if (ImGui.IsItemActivated()) readerScrubAudio = audio;
+                if (ImGui.IsItemActivated())
+                {
+                    readerScrubAudio = audio;
+                    readerScrubReferenceSeconds = position;
+                }
                 if (readerScrubAudio == audio && ImGui.IsItemActive())
                 {
                     position = MouseTime();

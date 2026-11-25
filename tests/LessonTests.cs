@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using FFTrueBard.Lessons;
 using NAudio.Wave;
@@ -113,6 +114,16 @@ internal static class LessonTests
             check(loop.Read(buffer, 0, buffer.Length) == 0, "One-exercise playback does not loop or continue into the next cue");
             loop.SeekSeconds(0);
             check(loop.Position == 800, "Seeking respects the active exercise clip");
+            var (measuredStart, measuredEnd) = new LessonAudioCue("", .2, .463).Within(1);
+            check(loop.SetPlaybackClip(measuredStart, measuredEnd) && loop.ClipEnd == .463,
+                "A reviewed fractional end survives cue validation and reaches the decoded stream");
+            loop.SeekSeconds(.438);
+            check(loop.Read(buffer, 0, buffer.Length) == 100 &&
+                  buffer.Take(100).SequenceEqual(data.Skip(1752).Take(100)) &&
+                  loop.Read(buffer, 0, buffer.Length) == 0,
+                "A seek after the printed cutoff still plays to the exact measured boundary");
+            check(loop.SetLoop(.438, .588, true) && loop.ClipEnd is null && loop.LoopEnabled,
+                "Explicit A-B playback still replaces the one-shot exercise clip");
             check(loop.SetLoop(0, 1, false) && loop.ClipEnd is null, "Manual audio controls can restore full-track playback");
         }
 
@@ -139,10 +150,37 @@ internal static class LessonTests
             Near(withoutMap.TimeAt(withoutMap.XAt(6)), 6) && Near(withoutMap.TimeAt(2), 10) &&
             !LessonScoreCursor.MatchesStaff(scoreRow, mapFixture with { Notes = [mapFixture.Notes[1], mapFixture.Notes[0]] }, 2, 10),
             "Unreviewed or invalid maps fall back to bounded audio-time seeking");
-        var bundled = LessonScorePlayhead.ReadBundled();
+        var repeats = mapFixture with { SchemaVersion = 2, Notes = [
+            new(3, 4, .2, .4, .02, .03), new(4, 4.5, .4, .4, .02, .03),
+            new(5, 6, .2, .4, .02, .03, 1), new(6, 7, .4, .4, .02, .03, 1),
+            new(7, 8, .6, .4, .02, .03, 2), new(8, 9, .8, .4, .02, .03, 2),
+        ] };
+        var repeatCursor = new LessonScoreCursor(scoreRow, 2, 10, repeats);
+        check(repeatCursor.NoteSynced && Near(repeatCursor.XAt(4.49), .41) &&
+              !repeatCursor.ShowsNoteAt(4.75) && repeatCursor.ShowsNoteAt(5) &&
+              Near(repeatCursor.XAt(5), .21) && Near(repeatCursor.XAt(7), .61),
+            "A repeat jumps back at the next sounding onset without interpolating across passes or a silent gap");
+        check(Near(repeatCursor.TimeAt(.211, 2.5), 3) && Near(repeatCursor.TimeAt(.211, 6), 5) &&
+              Near(repeatCursor.TimeAt(.71, 3.5), 7.5) && Near(repeatCursor.TimeAt(.21, 8.5), 5),
+            "Seeking chooses the current occurrence of a printed fret, otherwise the nearest pass for that section");
+        check(!LessonScoreCursor.MatchesStaff(scoreRow, repeats with { SchemaVersion = 1 }, 2, 10) &&
+              !LessonScoreCursor.MatchesStaff(scoreRow, repeats with { Notes = [repeats.Notes[0], repeats.Notes[4]] }, 2, 10) &&
+              !LessonScoreCursor.MatchesStaff(scoreRow, repeats, 2, 8.5),
+            "Repeat maps cannot reorder a v1 map, skip pass numbers, or extend outside the decoded clip");
+        var bundled = LessonScorePlayhead.ReadBundled(1)!;
         check(bundled.Map is { Exercise: 1, PdfPage: 7, Reviewed: true, Notes.Length: 32 } &&
             Near(bundled.Map.Notes[0].Start, 4.02),
             "The built-in Exercise 1 map contains only the supported timing/position schema and starts after the count-in");
+        check(LessonScorePlayhead.ReadBundled(193) is { CueEndSeconds: 49, MeasuredEndSeconds: 49.68 } measured &&
+              Near(measured.Map.Notes[^1].Start, 49.175) && measured.Map.Notes[^1].End < measured.MeasuredEndSeconds,
+            "Exercise 193 retains its final note past the printed cutoff and separates cursor end from playback end");
+        check(LessonScorePlayhead.ReadBundled(294) is { Map.SchemaVersion: 2, Map.Notes.Length: 26 } compound &&
+              compound.Map.Notes.Take(15).All(note => note.Pass == 0) &&
+              compound.Map.Notes.Skip(15).All(note => note.Pass == 1) &&
+              Near(compound.Map.Notes[4].X, compound.Map.Notes[15].X) &&
+              compound.Map.Notes[3].X < compound.Map.Notes[15].X,
+            "Exercise 294 repeats the two-bar phrase, not its opening pickup");
+        CheckMeasuredLessonEnd(check);
 
         // Optional, read-only integration check against a user-selected local library.
         var local = Environment.GetEnvironmentVariable("FFTRUEBARD_LESSON_TEST_ROOT");
@@ -161,16 +199,32 @@ internal static class LessonTests
             try
             {
                 var pdf = Path.Combine(bundledRoot.FullName, "book.pdf");
-                var mp3 = Path.Combine(bundledRoot.FullName, "week-1.mp3");
                 File.Copy(library.Paths.Pdf, pdf);
-                File.Copy(library.FindWeeklyExerciseTrack(1)!.Path, mp3);
-                var result = LessonScorePlayhead.FindForReader(bundledRoot.FullName, pdf, 1, 7, mp3, 0, 11);
-                check(result.Map?.Notes.Length == 32 && result.Problem is null, "Exercise 1 sync works with only the supported PDF and MP3");
-                var wrong = Path.Combine(bundledRoot.FullName, "other.mp3");
+                foreach (var exercise in Enumerable.Range(1, 365))
+                {
+                    var map = LessonScorePlayhead.ReadBundled(exercise)
+                        ?? throw new InvalidOperationException($"Missing reviewed playhead for Exercise {exercise}.");
+                    var track = library.FindWeeklyExerciseTrack(exercise)!;
+                    var copy = Path.Combine(bundledRoot.FullName, Path.GetFileName(track.Path));
+                    if (!File.Exists(copy)) File.Copy(track.Path, copy);
+                    var result = LessonScorePlayhead.FindForReader(bundledRoot.FullName, pdf, exercise, map.Map.PdfPage,
+                        copy, map.CueStartSeconds, map.CueEndSeconds);
+                    check(result.Map?.Notes.SequenceEqual(map.Map.Notes) == true && result.Problem is null &&
+                          result.MeasuredEndSeconds == map.MeasuredEndSeconds,
+                        $"Exercise {exercise} sync works with only the supported PDF and its weekly MP3");
+                }
+                var mp3 = Path.Combine(bundledRoot.FullName, Path.GetFileName(library.FindWeeklyExerciseTrack(1)!.Path));
+                var week2 = Path.Combine(bundledRoot.FullName, Path.GetFileName(library.FindWeeklyExerciseTrack(8)!.Path));
+                var wrong = Path.Combine(bundledRoot.FullName, "other.pdf");
                 using (File.Create(wrong)) { }
-                check(LessonScorePlayhead.FindForReader(bundledRoot.FullName, pdf, 1, 7, wrong, 0, 11).Map is null &&
+                check(LessonScorePlayhead.FindForReader(bundledRoot.FullName, pdf, 8, 9, mp3, 0, 12).Map is null &&
+                    LessonScorePlayhead.FindForReader(bundledRoot.FullName, pdf, 1, 7, week2, 0, 11).Map is null &&
                     LessonScorePlayhead.FindForReader(bundledRoot.FullName, wrong, 1, 7, mp3, 0, 11).Map is null,
                     "The bundled map fails closed when either media fingerprint differs");
+                check(LessonScorePlayhead.FindForReader(bundledRoot.FullName, pdf, 2, 7, mp3, 10, 23).Map is null &&
+                    LessonScorePlayhead.FindForReader(bundledRoot.FullName, pdf, 2, 7, mp3, 11, 24).Map is null &&
+                    LessonScorePlayhead.FindForReader(bundledRoot.FullName, pdf, 2, 9, mp3, 11, 23).Map is null,
+                    "A built-in map cannot attach to a different cue or page, even when its note times fit the clip");
                 var overridePath = LessonScorePlayhead.DefaultPath(bundledRoot.FullName, pdf, 1);
                 Directory.CreateDirectory(Path.GetDirectoryName(overridePath)!);
                 var notes = bundled.Map.Notes.ToArray();
@@ -178,6 +232,9 @@ internal static class LessonTests
                 File.WriteAllText(overridePath, System.Text.Json.JsonSerializer.Serialize(bundled.Map with { Notes = notes }));
                 check(LessonScorePlayhead.FindForReader(bundledRoot.FullName, pdf, 1, 7, mp3, 0, 11).Map?.Notes[0].Start == 4.03,
                     "A valid local playhead takes precedence over the built-in Exercise 1 map");
+                File.WriteAllText(overridePath, "{}");
+                check(LessonScorePlayhead.FindForReader(bundledRoot.FullName, pdf, 1, 7, mp3, 0, 11).Map?.Notes[0].Start == 4.02,
+                    "An invalid local playhead does not suppress the matching built-in map");
             }
             finally { bundledRoot.Delete(recursive: true); }
             var playheadPath = LessonScorePlayhead.DefaultPath(library.Paths.Root, library.Paths.Pdf, 1);
@@ -194,6 +251,64 @@ internal static class LessonTests
             }
             Console.WriteLine($"Local media check: {library.Exercises.Count} exercise/tuning and {library.Rhythm.Count} rhythm tracks opened read-only.");
         }
+    }
+
+    private static void CheckMeasuredLessonEnd(Action<bool, string> check)
+    {
+        var directory = Directory.CreateTempSubdirectory("fftruebard-measured-cue-");
+        try
+        {
+            string FileWithText(string name, string content)
+            {
+                var path = Path.Combine(directory.FullName, name);
+                File.WriteAllText(path, content);
+                return path;
+            }
+            static string Hash(string path) => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)));
+            const int exercise = 200;
+            var pdf = FileWithText("book.pdf", "PDF fingerprint fixture");
+            var track = FileWithText("weekly.mp3", "MP3 fingerprint fixture");
+            var otherPdf = FileWithText("other.pdf", "different PDF");
+            var otherTrack = FileWithText("other.mp3", "different MP3");
+            var map = new LessonScorePlayhead(1, exercise, 3, true, Hash(track), [
+                new(3.2, 5, .2, .4, .02, .03), new(5.05, 5.37, .6, .4, .02, .03),
+            ]);
+            var envelope = new LessonScorePlayhead.BundledMap(Hash(pdf), 2, 5, map, 5.45);
+            var path = LessonScorePlayhead.DefaultPath(directory.FullName, pdf, exercise);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            void Write(LessonScorePlayhead.BundledMap value) => File.WriteAllText(path, JsonSerializer.Serialize(value));
+            LessonScorePlayhead.ReaderTiming Find(int? printed = 5, string? pdfPath = null, string? trackPath = null, int page = 3)
+                => LessonScorePlayhead.FindForReader(directory.FullName, pdfPath ?? pdf, exercise, page, trackPath ?? track, 2, printed);
+
+            Write(envelope);
+            var match = Find();
+            check(match.MeasuredEndSeconds == 5.45 && match.Map?.Notes[^1].Start == 5.05,
+                "A measured fractional endpoint with matching media retains a final note after the printed cutoff");
+            var cursor = new LessonScoreCursor(new(.1, .4, .9, .5), 2, match.MeasuredEndSeconds!.Value, match.Map);
+            check(cursor.NoteSynced && cursor.TimeAt(.61) == 5.05 && cursor.ShowsNoteAt(5.32) && !cursor.ShowsNoteAt(5.39),
+                "The late fret can be sought and the playhead hides before the measured audio endpoint");
+            check(Find(6).Map is null && Find(pdfPath: otherPdf).Map is null && Find(trackPath: otherTrack).Map is null &&
+                  Find(page: 4).Map is null, "Neither a measured end nor its notes may attach to different media, printed cues, or page");
+            foreach (var invalid in new[] {
+                envelope with { MeasuredEndSeconds = null },
+                envelope with { MeasuredEndSeconds = 4.99 },
+                envelope with { MeasuredEndSeconds = 5.25 },
+                envelope with { MeasuredEndSeconds = 7.05 },
+                envelope with { CueEndSeconds = null },
+                envelope with { Map = map with { Reviewed = false } },
+            })
+            {
+                Write(invalid);
+                var actual = Find(invalid.CueEndSeconds);
+                check(actual.Map is null && actual.MeasuredEndSeconds is null,
+                    "Unreviewed, unbounded, or inconsistent endpoint overrides fail closed");
+            }
+            File.WriteAllText(path, JsonSerializer.Serialize(map with { Notes = [map.Notes[0]] }));
+            var legacy = Find();
+            check(legacy.Map?.Notes.Length == 1 && legacy.MeasuredEndSeconds is null,
+                "Legacy local playheads still load and keep the printed cutoff");
+        }
+        finally { directory.Delete(recursive: true); }
     }
 
     private static void CheckLessonTempo(Action<bool, string> check)
