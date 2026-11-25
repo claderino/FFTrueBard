@@ -79,10 +79,29 @@ internal readonly struct LessonScoreCursor
     public double TimeAt(double x, double? nearSeconds = null)
     {
         if (marks is not { } music) return Interpolate(Math.Clamp(x, left, right), left, right, start, end);
-        var bestTime = MusicStart;
+        var (first, last) = BestPass(music, x, nearSeconds ?? MusicStart);
+        return SeekInPass(music, first, last, x);
+    }
+
+    public LessonScoreMark? NoteAtX(double x, double nearSeconds)
+    {
+        if (marks is not { } music) return null;
+        var (first, last) = BestPass(music, x, nearSeconds);
+        var nearest = music[first];
+        for (var i = first; i <= last; i++)
+        {
+            var note = music[i];
+            if (x >= note.X && x <= note.X + note.Width) return note;
+            if (Math.Abs(Center(note) - x) < Math.Abs(Center(nearest) - x)) nearest = note;
+        }
+        return nearest;
+    }
+
+    private static (int First, int Last) BestPass(LessonScoreMark[] music, double x, double reference)
+    {
+        var best = (0, 0);
         var bestXDistance = double.PositiveInfinity;
         var bestTimeDistance = double.PositiveInfinity;
-        var reference = nearSeconds ?? MusicStart;
         for (var first = 0; first < music.Length;)
         {
             var last = first;
@@ -97,11 +116,11 @@ internal readonly struct LessonScoreCursor
             {
                 bestXDistance = xDistance;
                 bestTimeDistance = timeDistance;
-                bestTime = SeekInPass(music, first, last, x);
+                best = (first, last);
             }
             first = last + 1;
         }
-        return bestTime;
+        return best;
     }
 
     private static double SeekInPass(LessonScoreMark[] music, int first, int last, double x)

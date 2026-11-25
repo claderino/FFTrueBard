@@ -122,8 +122,25 @@ internal static class LessonTests
                   buffer.Take(100).SequenceEqual(data.Skip(1752).Take(100)) &&
                   loop.Read(buffer, 0, buffer.Length) == 0,
                 "A seek after the printed cutoff still plays to the exact measured boundary");
+            check(loop.SetClipLoop(.313, .438) && loop.LoopEnabled && loop.ClipEnd == .463,
+                "A TAB loop keeps the original exercise clip");
+            check(!loop.SetClipLoop(.438, .313) && !loop.SetClipLoop(.311, .405) &&
+                  !loop.SetClipLoop(.15, .32) && !loop.SetClipLoop(.338, .49) &&
+                  loop.LoopA == .313 && loop.LoopB == .438,
+                "Invalid TAB loops leave the existing loop unchanged");
+            loop.SeekSeconds(.313);
+            check(loop.Read(buffer, 0, buffer.Length) == buffer.Length &&
+                  buffer.Select((b, i) => b == data[1252 + i % 500]).All(v => v),
+                "A TAB loop plays exactly from A through the last sample before B");
+            check(loop.ClearClipLoop() && !loop.LoopEnabled && loop.ClipStart == .2 && loop.ClipEnd == .463,
+                "Turning off the TAB loop restores the one-shot exercise range");
+            loop.SeekSeconds(.438);
+            check(loop.Read(buffer, 0, buffer.Length) == 100 && loop.Read(buffer, 0, buffer.Length) == 0,
+                "Reader playback still stops at the measured exercise end after turning off a TAB loop");
             check(loop.SetLoop(.438, .588, true) && loop.ClipEnd is null && loop.LoopEnabled,
                 "Explicit A-B playback still replaces the one-shot exercise clip");
+            check(!loop.SetClipLoop(.338, .49) && !loop.ClearClipLoop() && loop.LoopEnabled,
+                "TAB loop controls do not replace or clear a full-track loop");
             check(loop.SetLoop(0, 1, false) && loop.ClipEnd is null, "Manual audio controls can restore full-track playback");
         }
 
@@ -163,6 +180,12 @@ internal static class LessonTests
         check(Near(repeatCursor.TimeAt(.211, 2.5), 3) && Near(repeatCursor.TimeAt(.211, 6), 5) &&
               Near(repeatCursor.TimeAt(.71, 3.5), 7.5) && Near(repeatCursor.TimeAt(.21, 8.5), 5),
             "Seeking chooses the current occurrence of a printed fret, otherwise the nearest pass for that section");
+        check(repeatCursor.NoteAtX(.21, 3.5) is { Pass: 0, Start: 3, End: 4 } &&
+              repeatCursor.NoteAtX(.21, 5.5) is { Pass: 1, Start: 5, End: 6 } &&
+              repeatCursor.NoteAtX(.41, 5.5) is { Pass: 1, Start: 6, End: 7 } &&
+              repeatCursor.NoteAtX(.35, 6.5)?.Start == 6 &&
+              withoutMap.NoteAtX(.21, 3.5) is null,
+            "TAB loop picks snap to the selected note's start and end on the current pass and require a reviewed map");
         check(!LessonScoreCursor.MatchesStaff(scoreRow, repeats with { SchemaVersion = 1 }, 2, 10) &&
               !LessonScoreCursor.MatchesStaff(scoreRow, repeats with { Notes = [repeats.Notes[0], repeats.Notes[4]] }, 2, 10) &&
               !LessonScoreCursor.MatchesStaff(scoreRow, repeats, 2, 8.5),
@@ -373,10 +396,10 @@ internal static class LessonTests
         check(Math.Abs(tail.Length / (double)(2 * sampleRate) - .08) < .005 && tail.Any(s => Math.Abs(s) > .1),
             "Seeking and changing speed discards buffered data and finishes a short clip tail");
 
-        clip.SetLoop(1, 2, true);
+        check(clip.SetClipLoop(1.25, 1.875), "A TAB loop can be enabled inside a clip with pitch-preserving playback");
         player.Reset(1.8, 75);
         check(Enumerable.Range(0, 25).All(_ => player.Read(buffer, 16, 8192) == 8192) &&
-            clip.Seconds >= 1 && clip.Seconds < 2, "Stretched playback loops without reading outside the A–B range");
+            clip.Seconds >= 1.25 && clip.Seconds < 1.875, "Stretched playback loops without reading outside the TAB A–B range");
         check(Math.Abs(LessonTempoProvider.SourceTime(4, 2, 50, 7, false, 0, 0) - 5) < 1e-6 &&
             Math.Abs(LessonTempoProvider.SourceTime(4, 2, 150, 6.8, false, 0, 0) - 6.8) < 1e-6 &&
             Math.Abs(LessonTempoProvider.SourceTime(1.5, 3, 150, 1.8, true, 1, 2) - 1) < 1e-6,
