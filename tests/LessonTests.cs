@@ -186,6 +186,24 @@ internal static class LessonTests
               repeatCursor.NoteAtX(.35, 6.5)?.Start == 6 &&
               withoutMap.NoteAtX(.21, 3.5) is null,
             "TAB loop picks snap to the selected note's start and end on the current pass and require a reviewed map");
+        check(repeatCursor.LoopPoint(4, atEnd: false) == repeats.Notes[1] &&
+              repeatCursor.LoopPoint(4, atEnd: true) == repeats.Notes[0] &&
+              repeatCursor.LoopPoint(6, atEnd: true) == repeats.Notes[2] &&
+              repeatCursor.LoopPoint(null, atEnd: false) is null &&
+              withoutMap.LoopPoint(3, atEnd: false) is null,
+            "Loop markers distinguish adjacent start and end times, retain the selected pass, and need a reviewed map");
+        var secondPassSpan = repeatCursor.LoopSpans(repeats.Notes[2], repeats.Notes[3]).Single();
+        check(Near(secondPassSpan.Left, .2) && Near(secondPassSpan.Right, .42),
+            "A same-pass loop shades only from the first fret's left edge through the final fret's right edge");
+        var splitSpans = repeatCursor.LoopSpans(repeats.Notes[1], repeats.Notes[2]).ToArray();
+        check(splitSpans.Length == 2 && Near(splitSpans[0].Left, .4) && Near(splitSpans[0].Right, .42) &&
+              Near(splitSpans[1].Left, .2) && Near(splitSpans[1].Right, .22),
+            "A loop crossing a repeat shades separate ranges instead of bridging the repeat jump");
+        var oneFret = scoreCursor.LoopSpans(mapFixture.Notes[0], mapFixture.Notes[0]).Single();
+        check(Near(oneFret.Left, .2) && Near(oneFret.Right, .22) &&
+              !repeatCursor.LoopSpans(repeats.Notes[3], repeats.Notes[2]).Any() &&
+              !repeatCursor.LoopSpans(repeats.Notes[4], repeats.Notes[2]).Any(),
+            "A single-fret loop shades that fret and a reversed or empty range is not shaded");
         check(!LessonScoreCursor.MatchesStaff(scoreRow, repeats with { SchemaVersion = 1 }, 2, 10) &&
               !LessonScoreCursor.MatchesStaff(scoreRow, repeats with { Notes = [repeats.Notes[0], repeats.Notes[4]] }, 2, 10) &&
               !LessonScoreCursor.MatchesStaff(scoreRow, repeats, 2, 8.5),
