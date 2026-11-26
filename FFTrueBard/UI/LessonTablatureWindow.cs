@@ -176,7 +176,10 @@ public sealed partial class ConfigWindow
         var display = width * (tablatureZoom / 100f) * texture.Size / texture.Width;
         var heading = ImGui.GetTextLineHeightWithSpacing();
         var plateHeight = display.Y + heading + padding.Y * 2 + 5 * scale;
-        var available = Math.Max(80 * scale, ImGui.GetContentRegionAvail().Y - ImGui.GetFrameHeightWithSpacing() * 2);
+        var footerSpace = ImGui.GetFrameHeightWithSpacing() * 2;
+        if (playback is not null && activeReaderAudio == playback && HasReaderLoopPoints)
+            footerSpace += ImGui.GetFrameHeightWithSpacing();
+        var available = Math.Max(80 * scale, ImGui.GetContentRegionAvail().Y - footerSpace);
         var flags = tablatureZoom == 100 && plateHeight <= available
             ? ImGuiWindowFlags.NoScrollbar
             : ImGuiWindowFlags.HorizontalScrollbar;

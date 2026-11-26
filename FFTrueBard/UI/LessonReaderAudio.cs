@@ -14,11 +14,14 @@ public sealed partial class ConfigWindow
     private LessonScoreMark? readerLoopTarget;
     private double? readerLoopA;
     private double? readerLoopB;
+    // The player aligns to sample frames; keep the exact reviewed times for the overlay.
+    private (double A, double B)? playingReaderLoop;
     private string? readerLoopProblem;
     private bool readerRevealedStaff;
     private string readerAudioError = "";
 
     private bool ReaderAudioLoading => lessonPlayer.Loading || scanningLessons is not null || loadingCatalog is not null;
+    private bool HasReaderLoopPoints => readerLoopA is not null || readerLoopB is not null;
 
     private void StartPrintedCue(ReaderAudio audio)
     {
@@ -28,6 +31,7 @@ public sealed partial class ConfigWindow
             LoadLessonTrack(audio.Track, new LessonAudioCue("", audio.Seconds, audio.EndSeconds), playWhenReady: true);
             activeReaderAudio = audio;
             readerLoopA = readerLoopB = null;
+            playingReaderLoop = null;
             readerLoopTarget = null;
             readerLoopProblem = null;
             readerRevealedStaff = false;
@@ -67,11 +71,13 @@ public sealed partial class ConfigWindow
             ImGui.TextDisabled(label);
             if (!mapping.NoteSynced && ImGui.IsItemHovered())
                 ImGui.SetTooltip(tablaturePlayheadProblem ?? "The note timings don't match this TAB row.");
-            if (ready && mapping.NoteSynced && lessonPlayer.LoopEnabled)
-                ImGui.TextDisabled($"TAB loop: {RelativeLoopTime(lessonPlayer.LoopA, audio)} to {RelativeLoopTime(lessonPlayer.LoopB, audio)}");
-            if (ready && readerLoopProblem is not null) ImGui.TextWrapped(readerLoopProblem);
         }
         else if (audio is not null) ImGui.TextDisabled("This TAB row could not be located for seeking.");
+        if (audio is not null && activeReaderAudio == audio && lessonPlayer.Ready)
+        {
+            if (HasReaderLoopPoints) DrawReaderLoopStatus(audio);
+            if (readerLoopProblem is not null) ImGui.TextWrapped(readerLoopProblem);
+        }
     }
 
     private void DrawReaderAudioOverlay(LessonTablatureCrop? view, LessonTablatureCrop box, ReaderAudio audio,
@@ -155,6 +161,38 @@ public sealed partial class ConfigWindow
             }
             var playheadX = Project(mapping.XAt(position), staff.Top).X;
             draw.PushClipRect(imageOrigin, imageOrigin + imageSize, true);
+            if (mapping.NoteSynced && HasReaderLoopPoints)
+            {
+                var active = lessonPlayer.LoopEnabled ? playingReaderLoop : null;
+                var a = mapping.LoopPoint(active?.A ?? readerLoopA, atEnd: false);
+                var b = mapping.LoopPoint(active?.B ?? readerLoopB, atEnd: true);
+                if (a is not null && b is not null)
+                {
+                    var shade = ImGui.GetColorU32(Rgb(0x31786c) with { W = active is not null ? .24f : .14f });
+                    foreach (var (left, right) in mapping.LoopSpans(a, b))
+                        draw.AddRectFilled(Project(left, staff.Top), Project(right, staff.Bottom), shade);
+                }
+
+                var line = ImGui.GetColorU32(Rgb(0x215b51));
+                var text = ImGui.GetColorU32(ReaderPaper);
+                void Mark(LessonScoreMark note, bool atEnd, string label)
+                {
+                    var x = Project(atEnd ? note.X + note.Width : note.X, staff.Top).X;
+                    var size = ImGui.CalcTextSize(label);
+                    var padding = new Vector2(2, 0) * scale;
+                    // Put the badges on opposite edges so even two points on the same fret stay readable.
+                    var y = atEnd
+                        ? Math.Min(rowMax.Y + 2 * scale, imageOrigin.Y + imageSize.Y - size.Y)
+                        : Math.Max(rowMin.Y - 2 * scale - size.Y, imageOrigin.Y);
+                    var min = new Vector2(x - (atEnd ? 0 : size.X + 2 * padding.X), y);
+                    draw.AddLine(new(x, Math.Min(rowMin.Y, y + size.Y)), new(x, Math.Max(rowMax.Y, y)),
+                        line, 2 * scale);
+                    draw.AddRectFilled(min, min + size + 2 * padding, line, 2 * scale);
+                    draw.AddText(min + padding, text, label);
+                }
+                if (a is not null) Mark(a, atEnd: false, "A");
+                if (b is not null) Mark(b, atEnd: true, "B");
+            }
             if (mapping.ShowsNoteAt(position))
             {
                 var top = new Vector2(playheadX, rowMin.Y - 5 * scale);
@@ -203,6 +241,39 @@ public sealed partial class ConfigWindow
 
     private static string RelativeLoopTime(double seconds, ReaderAudio audio) => $"{seconds - audio.Seconds:0.00} s";
 
+    private void DrawReaderLoopStatus(ReaderAudio audio)
+    {
+        string Point(double? value) => value is { } t ? RelativeLoopTime(t, audio) : "not set";
+        var active = lessonPlayer.LoopEnabled ? playingReaderLoop : null;
+        var label = active is { } bounds
+            ? $"TAB loop: A {Point(bounds.A)}  ·  B {Point(bounds.B)}"
+            : $"TAB loop points: A {Point(readerLoopA)}  ·  B {Point(readerLoopB)}";
+
+        var right = ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X;
+        ImGui.BeginDisabled(ReaderAudioLoading);
+        if (ImGui.SmallButton("Clear TAB loop") && (active is null || TurnOffReaderLoop()))
+        {
+            readerLoopA = readerLoopB = null;
+            readerLoopTarget = null;
+            readerLoopProblem = null;
+            ImGui.EndDisabled();
+            return;
+        }
+        ImGui.EndDisabled();
+        ContinueReaderRow(right, ImGui.CalcTextSize(label).X);
+        ImGui.TextDisabled(label);
+        if (active is { } current && (readerLoopA != current.A || readerLoopB != current.B) && ImGui.IsItemHovered())
+            ImGui.SetTooltip("Showing the active loop. Use Play A–B loop in the fret menu to apply your new points.");
+    }
+
+    private bool TurnOffReaderLoop()
+    {
+        if (!lessonPlayer.ClearScoreLoop()) return false;
+        playingReaderLoop = null;
+        lessonLoop = false;
+        return true;
+    }
+
     private void DrawReaderLoopMenu(ReaderAudio audio)
     {
         if (!ImGui.BeginPopup("##tab_ab_loop")) return;
@@ -224,6 +295,7 @@ public sealed partial class ConfigWindow
             {
                 if (lessonPlayer.SetScoreLoop(start, end))
                 {
+                    playingReaderLoop = (start, end);
                     loopA = (float)start;
                     loopB = (float)end;
                     lessonLoop = true;
@@ -232,8 +304,7 @@ public sealed partial class ConfigWindow
                 else readerLoopProblem = "The loop must be inside the exercise's audio range.";
             }
             ImGui.EndDisabled();
-            if (lessonPlayer.LoopEnabled && ImGui.MenuItem("Turn off TAB loop") && lessonPlayer.ClearScoreLoop())
-                lessonLoop = false;
+            if (lessonPlayer.LoopEnabled && ImGui.MenuItem("Turn off TAB loop")) TurnOffReaderLoop();
         }
         ImGui.EndPopup();
     }

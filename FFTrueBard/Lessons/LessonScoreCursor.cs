@@ -97,6 +97,39 @@ internal readonly struct LessonScoreCursor
         return nearest;
     }
 
+    public LessonScoreMark? LoopPoint(double? seconds, bool atEnd) =>
+        seconds is { } time && marks is { } music
+            ? Array.Find(music, note => (atEnd ? note.End : note.Start) == time)
+            : null;
+
+    public IEnumerable<(double Left, double Right)> LoopSpans(LessonScoreMark a, LessonScoreMark b)
+    {
+        if (marks is not { } music || b.End - a.Start < .1) yield break;
+        var pass = -1;
+        var first = 0d;
+        var last = 0d;
+        foreach (var note in music)
+        {
+            if (note.Start < a.Start) continue;
+            if (note.Start > b.Start) break;
+            // On a repeat the next note can be farther left on the printed staff.
+            // Shade each pass separately, never across the jump.
+            if (note.Pass != pass)
+            {
+                if (pass >= 0) yield return (first, last);
+                pass = note.Pass;
+                first = note.X;
+                last = note.X + note.Width;
+            }
+            else
+            {
+                first = Math.Min(first, note.X);
+                last = Math.Max(last, note.X + note.Width);
+            }
+        }
+        if (pass >= 0) yield return (first, last);
+    }
+
     private static (int First, int Last) BestPass(LessonScoreMark[] music, double x, double reference)
     {
         var best = (0, 0);
