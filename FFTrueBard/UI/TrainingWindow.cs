@@ -86,6 +86,7 @@ public sealed partial class ConfigWindow
 
     private void StopTools()
     {
+        myTabToolActive = false;
         queuedLessonCue = null;
         activeReaderAudio = null;
         readerScrubAudio = null;
@@ -113,6 +114,8 @@ public sealed partial class ConfigWindow
         StopTools();
         lessonPlayer.Dispose();
         DisposeLessonTablature();
+        DisposeMyTabPage();
+        ResetMyTabMelody();
         lessonHeading?.Dispose();
         if (checklist.Running)
         {

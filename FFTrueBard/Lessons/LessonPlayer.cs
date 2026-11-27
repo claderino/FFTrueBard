@@ -3,10 +3,10 @@ using NAudio.Wave;
 
 namespace FFTrueBard.Lessons;
 
-/// <summary>Reads only the chosen MP3. Decoding/opening runs outside the game thread.</summary>
+/// <summary>Opens the chosen lesson recording or MIDI guide outside the game thread.</summary>
 public sealed class LessonPlayer : IDisposable
 {
-    private Task<AudioFileReader>? loading;
+    private Task<WaveStream>? loading;
     private WaveOutEvent? output;
     private LoopingLessonStream? stream;
     private LessonTempoProvider? tempo;
@@ -47,21 +47,28 @@ public sealed class LessonPlayer : IDisposable
     public double LoopA => stream?.LoopA ?? 0;
     public double LoopB => stream?.LoopB ?? 0;
 
-    public void Load(string path)
+    public void Load(string path) => LoadSource(path, "Loading local MP3...", () =>
+    {
+        var full = LessonLibrary.Normalize(path);
+        if (!System.IO.Path.GetExtension(full).Equals(".mp3", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Select a local .mp3 file.");
+        return new AudioFileReader(full);
+    });
+
+    internal void LoadMidi(string path) => LoadSource(path, "Rendering local MIDI guide...", () => TabMidiGuide.Open(path));
+    internal void LoadTabGuide(string path, TabPdfGuide guide) => LoadSource(path, "Generating TAB audio...", guide.Render);
+    internal void LoadTabDraftNotes(string id, TabSynthNote[] notes) =>
+        LoadSource(id, "Generating a TAB draft preview...", () => TabMidiGuide.Render(notes, .5));
+
+    private void LoadSource(string path, string status, Func<WaveStream> open)
     {
         if (Loading || disposed) return;
         Unload();
         positionAnchor = outputAnchor = 0;
         Path = path;
         discardLoad = false;
-        Status = "Loading local MP3...";
-        loading = Task.Run(() =>
-        {
-            var full = LessonLibrary.Normalize(path);
-            if (!System.IO.Path.GetExtension(full).Equals(".mp3", StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException("Select a local .mp3 file.");
-            return new AudioFileReader(full);
-        });
+        Status = status;
+        loading = Task.Run(open);
     }
 
     public void Update()

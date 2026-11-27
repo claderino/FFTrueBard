@@ -1,4 +1,6 @@
+using System.Numerics;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 
 namespace FFTrueBard.Lessons;
 
@@ -11,16 +13,23 @@ internal static class LessonPdfRenderer
     private static readonly object RenderLock = new();
 
     internal sealed record Image(int Width, int Height, byte[] Pixels, int? AudioSeconds, int? NextAudioSeconds = null,
-        LessonTabStaff? TabStaff = null);
+        LessonTabStaff? TabStaff = null)
+    {
+        public int PageCount { get; init; }
+        public TabPdfDigit[]? TabDigits { get; init; }
+        public TabPdfNotation? TabNotation { get; init; }
+        public string? PdfSha256 { get; init; }
+    }
 
     public static unsafe Image Render(string pluginDirectory, string path, int pageNumber, LessonTablatureCrop? crop,
-        LessonTablatureCrop? audioCrop = null, LessonTablatureEntry? nextAudio = null)
+        LessonTablatureCrop? audioCrop = null, LessonTablatureEntry? nextAudio = null, bool readTabDigits = false)
     {
         path = LessonLibrary.Normalize(path);
         if (!Path.GetExtension(path).Equals(".pdf", StringComparison.OrdinalIgnoreCase) || !File.Exists(path))
             throw new FileNotFoundException("Select an existing local PDF in Lesson files.");
         crop?.Validate();
         audioCrop?.Validate();
+        if (readTabDigits && crop is not null) throw new ArgumentException("TAB detection needs a full PDF page.");
 
         // PDFium needs these bytes to stay pinned until we close the document. Loading the
         // bytes ourselves also supports Unicode paths and keeps PDFium away from the filesystem.
@@ -64,7 +73,18 @@ internal static class LessonPdfRenderer
                                 throw new InvalidDataException("This PDF page could not be loaded.");
                             try
                             {
-                                var image = RenderPage(library, page, crop, audioCrop);
+                                var image = RenderPage(library, page, crop, audioCrop) with { PageCount = count };
+                                if (readTabDigits)
+                                {
+                                    var (digits, glyphs) = ReadTabText(library, page);
+                                    var (strokes, arcs, contours) = ReadTabPaths(library, page);
+                                    image = image with
+                                    {
+                                        TabDigits = digits,
+                                        TabNotation = new(glyphs, strokes, arcs, contours),
+                                        PdfSha256 = Convert.ToHexString(SHA256.HashData(bytes)),
+                                    };
+                                }
                                 if (image.AudioSeconds is null || nextAudio is null) return image;
                                 if (nextAudio.PdfPage == pageNumber)
                                     return image with { NextAudioSeconds = ReadPrintedAudio(library, page, nextAudio.Crop) };
@@ -82,6 +102,197 @@ internal static class LessonPdfRenderer
             }
             finally { NativeLibrary.Free(library); }
         }
+    }
+
+    private static unsafe (TabPdfDigit[] Digits, TabPdfGlyph[] Glyphs) ReadTabText(nint library, nint page)
+    {
+        nint Export(string name) => NativeLibrary.GetExport(library, name);
+        var open = (delegate* unmanaged<nint, nint>)Export("FPDFText_LoadPage");
+        var close = (delegate* unmanaged<nint, void>)Export("FPDFText_ClosePage");
+        var count = (delegate* unmanaged<nint, int>)Export("FPDFText_CountChars");
+        var unicode = (delegate* unmanaged<nint, int, uint>)Export("FPDFText_GetUnicode");
+        var fontInfo = (delegate* unmanaged<nint, int, byte*, nuint, int*, nuint>)Export("FPDFText_GetFontInfo");
+        var origin = (delegate* unmanaged<nint, int, double*, double*, int>)Export("FPDFText_GetCharOrigin");
+        var bounds = (delegate* unmanaged<nint, int, double*, double*, double*, double*, int>)Export("FPDFText_GetCharBox");
+        var project = (delegate* unmanaged<nint, int, int, int, int, int, double, double, int*, int*, int>)Export("FPDF_PageToDevice");
+        const int grid = 100_000;
+        var text = open(page);
+        if (text == 0) return ([], []);
+        try
+        {
+            var total = count(text);
+            if (total is < 1 or > 50_000) return ([], []);
+            var digits = new List<TabPdfDigit>();
+            var glyphs = new List<TabPdfGlyph>();
+            var fontName = stackalloc byte[96];
+            for (var i = 0; i < total; i++)
+            {
+                var code = unicode(text, i);
+                if (code is < 32 or > 0xffff) continue;
+                var nameLength = fontInfo(text, i, fontName, 96, null);
+                var legacy = nameLength is > 1 and <= 96 &&
+                    TabPdfDraft.IsLegacyGuitarFont(new ReadOnlySpan<byte>(fontName, (int)nameLength - 1));
+                double ox, oy;
+                int gx, gy;
+                if (origin(text, i, &ox, &oy) != 0 &&
+                    project(page, 0, 0, grid, grid, 0, ox, oy, &gx, &gy) != 0)
+                    glyphs.Add(new((char)code, (double)gx / grid, (double)gy / grid, legacy));
+                var digit = TabPdfDraft.DecodeDigit((char)code, legacy);
+                if (digit < 0) continue;
+                double left, right, top, bottom;
+                int x0, x1, y0, y1;
+                if (bounds(text, i, &left, &right, &bottom, &top) == 0 ||
+                    project(page, 0, 0, grid, grid, 0, left, top, &x0, &y0) == 0 ||
+                    project(page, 0, 0, grid, grid, 0, right, bottom, &x1, &y1) == 0 ||
+                    x0 < 0 || x1 > grid || y0 < 0 || y1 > grid || x1 <= x0 || y1 <= y0) continue;
+                digits.Add(new(digit, (double)x0 / grid, (double)y0 / grid, (double)x1 / grid, (double)y1 / grid, legacy));
+            }
+            return (digits.ToArray(), glyphs.ToArray());
+        }
+        finally { close(text); }
+    }
+
+    private static unsafe (TabPdfStroke[] Strokes, TabPdfArc[] Arcs, TabPdfContour[] Contours) ReadTabPaths(nint library, nint page)
+    {
+        nint Export(string name) => NativeLibrary.GetExport(library, name);
+        var count = (delegate* unmanaged<nint, int>)Export("FPDFPage_CountObjects");
+        var get = (delegate* unmanaged<nint, int, nint>)Export("FPDFPage_GetObject");
+        var type = (delegate* unmanaged<nint, int>)Export("FPDFPageObj_GetType");
+        var formCount = (delegate* unmanaged<nint, int>)Export("FPDFFormObj_CountObjects");
+        var formGet = (delegate* unmanaged<nint, int, nint>)Export("FPDFFormObj_GetObject");
+        var segments = (delegate* unmanaged<nint, int>)Export("FPDFPath_CountSegments");
+        var getSegment = (delegate* unmanaged<nint, int, nint>)Export("FPDFPath_GetPathSegment");
+        var segmentType = (delegate* unmanaged<nint, int>)Export("FPDFPathSegment_GetType");
+        var isClosed = (delegate* unmanaged<nint, int>)Export("FPDFPathSegment_GetClose");
+        var point = (delegate* unmanaged<nint, float*, float*, int>)Export("FPDFPathSegment_GetPoint");
+        var mode = (delegate* unmanaged<nint, int*, int*, int>)Export("FPDFPath_GetDrawMode");
+        var bounds = (delegate* unmanaged<nint, float*, float*, float*, float*, int>)Export("FPDFPageObj_GetBounds");
+        var matrix = (delegate* unmanaged<nint, float*, int>)Export("FPDFPageObj_GetMatrix");
+        var project = (delegate* unmanaged<nint, int, int, int, int, int, double, double, int*, int*, int>)Export("FPDF_PageToDevice");
+        const int objectLimit = 25_000;
+        var total = count(page);
+        if (total is < 1 or > objectLimit) return ([], [], []);
+        const int grid = 100_000;
+        var paths = new List<TabPdfStroke>();
+        var arcs = new List<TabPdfArc>();
+        var contours = new List<TabPdfContour>();
+        var transform = stackalloc float[6];
+        Span<TabPdfPoint> points = stackalloc TabPdfPoint[5];
+        var work = new Stack<(nint Object, Matrix3x2 Parent, int Depth)>();
+        for (var i = total - 1; i >= 0; i--)
+            work.Push((get(page, i), Matrix3x2.Identity, 0));
+        var visited = 0;
+        var visitedSegments = 0;
+        while (work.TryPop(out var item))
+        {
+            if (++visited > objectLimit) return ([], [], []);
+            var obj = item.Object;
+            if (obj == 0) continue;
+            var kindOfObject = type(obj);
+            if (kindOfObject is not (2 or 5) || matrix(obj, transform) == 0) continue;
+            var world = new Matrix3x2(transform[0], transform[1], transform[2], transform[3], transform[4], transform[5]) * item.Parent;
+            if (kindOfObject == 5)
+            {
+                var children = formCount(obj);
+                if (item.Depth >= 12 || children > objectLimit - visited - work.Count) return ([], [], []);
+                for (var i = children - 1; i >= 0; i--)
+                    work.Push((formGet(obj, i), world, item.Depth + 1));
+                continue;
+            }
+            var n = segments(obj);
+            if (n < 0 || (visitedSegments += n) > 250_000) return ([], [], []);
+            if (n is >= 4 and <= 128)
+            {
+                for (var j = 1; j < n; j++)
+                {
+                    var segment = getSegment(obj, j);
+                    if (segment == 0 || segmentType(segment) != 1) continue;
+                    float left, bottom, right, top;
+                    if (bounds(obj, &left, &bottom, &right, &top) != 0)
+                    {
+                        var a = Vector2.Transform(new(left, top), item.Parent);
+                        var b = Vector2.Transform(new(right, bottom), item.Parent);
+                        var c = Vector2.Transform(new(left, bottom), item.Parent);
+                        var d = Vector2.Transform(new(right, top), item.Parent);
+                        var min = Vector2.Min(Vector2.Min(a, b), Vector2.Min(c, d));
+                        var max = Vector2.Max(Vector2.Max(a, b), Vector2.Max(c, d));
+                        int x0, y0, x1, y1;
+                        if (project(page, 0, 0, grid, grid, 0, min.X, max.Y, &x0, &y0) != 0 &&
+                            project(page, 0, 0, grid, grid, 0, max.X, min.Y, &x1, &y1) != 0)
+                            arcs.Add(new((double)Math.Min(x0, x1) / grid, (double)Math.Min(y0, y1) / grid,
+                                (double)Math.Max(x0, x1) / grid, (double)Math.Max(y0, y1) / grid, n));
+                    }
+                    break;
+                }
+            }
+            // A printer can combine every clef or notehead on the page into one path.
+            // The cumulative segment limit above still bounds these compound objects.
+            if (n < 2) continue;
+            int fill, stroke;
+            if (mode(obj, &fill, &stroke) == 0) continue;
+            if (stroke == 0 && fill == 0) continue;
+            var written = 0;
+            var curvePoints = 0;
+            var leftX = 0d;
+            var rightX = 0d;
+            var topY = 0d;
+            var bottomY = 0d;
+            var previous = default(TabPdfPoint);
+            var filled = fill != 0;
+            void AddContour()
+            {
+                if (!filled || written < 4 || leftX >= rightX || topY >= bottomY) return;
+                if (written <= 96)
+                    contours.Add(new(leftX, topY, rightX, bottomY, written, curvePoints));
+            }
+            for (var j = 0; j < n; j++)
+            {
+                var segment = getSegment(obj, j);
+                float x, y;
+                int px, py;
+                if (segment == 0 || point(segment, &x, &y) == 0 ||
+                    project(page, 0, 0, grid, grid, 0, world.M11 * x + world.M21 * y + world.M31,
+                        world.M12 * x + world.M22 * y + world.M32, &px, &py) == 0)
+                {
+                    written = 0;
+                    break;
+                }
+                var kind = segmentType(segment);
+                var current = new TabPdfPoint((double)px / grid, (double)py / grid);
+                if (stroke != 0 && j > 0 && kind == 0)
+                    paths.Add(new(false, [previous, current]));
+                previous = current;
+                if (kind == 2)
+                {
+                    // Some exporters put independent contours in a single filled path.
+                    AddContour();
+                    if (fill != 0 && curvePoints == 0 && written is 4 or 5)
+                        paths.Add(new(true, points[..written].ToArray()));
+                    written = curvePoints = 0;
+                    leftX = rightX = current.X;
+                    topY = bottomY = current.Y;
+                }
+                else
+                {
+                    leftX = Math.Min(leftX, current.X);
+                    rightX = Math.Max(rightX, current.X);
+                    topY = Math.Min(topY, current.Y);
+                    bottomY = Math.Max(bottomY, current.Y);
+                    if (kind == 1) curvePoints++;
+                }
+                if (written < points.Length) points[written] = current;
+                written++;
+                if (isClosed(segment) == 0) continue;
+                AddContour();
+                if (fill != 0 && curvePoints == 0 && written is 4 or 5)
+                    paths.Add(new(true, points[..written].ToArray()));
+                written = curvePoints = 0;
+            }
+            AddContour();
+            if (fill != 0 && curvePoints == 0 && written is 4 or 5)
+                paths.Add(new(true, points[..written].ToArray()));
+        }
+        return (paths.ToArray(), arcs.ToArray(), contours.ToArray());
     }
 
     private static unsafe Image RenderPage(nint library, nint page, LessonTablatureCrop? crop, LessonTablatureCrop? audioCrop)

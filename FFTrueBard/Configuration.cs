@@ -18,6 +18,7 @@ public sealed class Configuration : IPluginConfiguration
     public string LessonSequenceFile { get; set; } = "";
     public float LessonPitchTolerance { get; set; } = 35;
     public string LessonCatalogFile { get; set; } = "";
+    public string MyTabsFolder { get; set; } = "";
 
     public bool PracticeMode { get; set; } = true;
     public int PracticeChord { get; set; }

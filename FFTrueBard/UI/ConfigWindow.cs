@@ -137,10 +137,14 @@ public sealed partial class ConfigWindow : IDisposable
         }
 
         DrawWorkspaceNavigation();
+        if (activeWorkspace != "My Tabs" && myTabToolActive) StopTools();
         switch (activeWorkspace)
         {
             case "Lessons":
                 DrawLessons();
+                break;
+            case "My Tabs":
+                DrawToolBody("My Tabs", DrawMyTabs);
                 break;
             case "Practice":
                 if (ImGui.BeginTabBar("practice_tools"))

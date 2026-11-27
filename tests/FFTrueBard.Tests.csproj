@@ -12,6 +12,10 @@
     <Compile Include="../FFTrueBard/Lessons/LessonLibrary.cs" Link="LessonLibrary.cs" />
     <Compile Include="../FFTrueBard/Lessons/LessonProgress.cs" Link="LessonProgress.cs" />
     <Compile Include="../FFTrueBard/Lessons/LessonPlayer.cs" Link="LessonPlayer.cs" />
+    <Compile Include="../FFTrueBard/Lessons/TabMidiGuide.cs" Link="TabMidiGuide.cs" />
+    <Compile Include="../FFTrueBard/Lessons/TabPdfGuide.cs" Link="TabPdfGuide.cs" />
+    <Compile Include="../FFTrueBard/Lessons/TabGuideBuilder.cs" Link="TabGuideBuilder.cs" />
+    <Compile Include="../FFTrueBard/Lessons/TabPracticeLibrary.cs" Link="TabPracticeLibrary.cs" />
     <Compile Include="../FFTrueBard/Lessons/LessonTempoProvider.cs" Link="LessonTempoProvider.cs" />
     <Compile Include="../FFTrueBard/Lessons/LessonSequence.cs" Link="LessonSequence.cs" />
     <Compile Include="../FFTrueBard/Lessons/LessonPitchPractice.cs" Link="LessonPitchPractice.cs" />

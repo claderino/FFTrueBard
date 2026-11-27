@@ -10,21 +10,21 @@ internal readonly struct LessonScoreCursor
     private readonly double start;
     private readonly double end;
     private readonly LessonScoreMark[]? marks;
-    private readonly bool hasPasses;
+    private readonly bool hideGaps;
     public bool NoteSynced => marks is not null;
     public double Left => left;
     public double Right => right;
     public double MusicStart => marks?[0].Start ?? start;
     public double MusicEnd => marks?[^1].End ?? end;
 
-    public LessonScoreCursor(LessonTabStaff staff, double start, double end, LessonScorePlayhead? map)
+    public LessonScoreCursor(LessonTabStaff staff, double start, double end, LessonScorePlayhead? map, bool hideGaps = false)
     {
         left = staff.Left + (staff.Right - staff.Left) * .06; // Leave space for the TAB label.
         right = staff.Right;
         this.start = start;
         this.end = end;
         marks = MatchesStaff(staff, map, start, end) ? map!.Notes : null;
-        hasPasses = marks is not null && map!.SchemaVersion == 2;
+        this.hideGaps = hideGaps || (marks is not null && map!.SchemaVersion == 2);
     }
 
     private static double Center(LessonScoreMark mark) => mark.X + mark.Width / 2;
@@ -60,7 +60,7 @@ internal readonly struct LessonScoreCursor
     public bool ShowsNoteAt(double seconds)
     {
         if (marks is not { } music || seconds < MusicStart || seconds >= MusicEnd) return false;
-        if (!hasPasses) return true;
+        if (!hideGaps) return true;
         return seconds < music[MarkAtOrBefore(music, seconds)].End;
     }
 
