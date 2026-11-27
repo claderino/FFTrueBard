@@ -8,7 +8,15 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="NAudio" Version="2.2.1" />
     <Compile Include="../../FFTrueBard/Lessons/LessonPdfRenderer.cs" Link="LessonPdfRenderer.cs" />
+    <Compile Include="../../FFTrueBard/Lessons/TabPdfDraft.cs" Link="TabPdfDraft.cs" />
+    <Compile Include="../../FFTrueBard/Lessons/TabPdfRhythm.cs" Link="TabPdfRhythm.cs" />
+    <Compile Include="../../FFTrueBard/Lessons/TabPdfScan.cs" Link="TabPdfScan.cs" />
+    <Compile Include="../../FFTrueBard/Lessons/PianoMelodyTab.cs" Link="PianoMelodyTab.cs" />
+    <Compile Include="../../FFTrueBard/Lessons/TabGuideBuilder.cs" Link="TabGuideBuilder.cs" />
+    <Compile Include="../../FFTrueBard/Lessons/TabPdfGuide.cs" Link="TabPdfGuide.cs" />
+    <Compile Include="../../FFTrueBard/Lessons/TabMidiGuide.cs" Link="TabMidiGuide.cs" />
     <Compile Include="../../FFTrueBard/Lessons/LessonLibrary.cs" Link="LessonLibrary.cs" />
     <Compile Include="../../FFTrueBard/Lessons/LessonCatalog.cs" Link="LessonCatalog.cs" />
     <Compile Include="../../FFTrueBard/Lessons/LessonSequence.cs" Link="LessonSequence.cs" />

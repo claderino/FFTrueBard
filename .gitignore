@@ -17,6 +17,9 @@ venv/
 *.mp3
 *.wav
 *.pdf
+*.mid
+*.midi
+*.tab-guide.json
 *.notes.json
 *.course.json
 *.tablature.json

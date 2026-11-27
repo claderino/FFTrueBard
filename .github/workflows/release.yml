@@ -23,7 +23,7 @@ jobs:
         shell: pwsh
         run: |
           $media = git ls-files | Where-Object {
-            $_ -match '(?i)(\.(mp3|wav|pdf)$|\.(notes|course|reference|tablature|playhead)\.json$)' -and
+            $_ -match '(?i)(\.(mp3|wav|pdf|mid|midi)$|\.(notes|course|reference|tablature|playhead|tab-guide)\.json$)' -and
             $_ -cne 'FFTrueBard/Lessons/Indexes/guitar-aerobics.tablature.json' -and
             $_ -cnotmatch '^FFTrueBard/Lessons/Indexes/guitar-aerobics-[0-9]{3}\.playhead\.json$'
           }

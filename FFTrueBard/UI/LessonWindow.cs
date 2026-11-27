@@ -267,12 +267,16 @@ public sealed partial class ConfigWindow
         ImGui.EndDisabled();
     }
 
-    private void DrawLessonPlayback()
+    private void DrawLessonPlayback(bool midiGuide = false)
     {
         ImGui.TextWrapped(lessonPlayer.Status);
         if (lessonPlayer.Path.Length > 0) ImGui.TextWrapped($"Track: {Path.GetFileName(lessonPlayer.Path)}");
         ImGui.BeginDisabled(!lessonPlayer.Ready);
-        if (ImGui.Button("Play lesson audio")) StartLessonPlayback();
+        if (ImGui.Button(midiGuide ? "Play MIDI guide" : "Play lesson audio"))
+        {
+            if (midiGuide) myTabToolActive = true;
+            StartLessonPlayback();
+        }
         ImGui.SameLine();
         if (ImGui.Button("Pause audio")) lessonPlayer.Pause();
         ImGui.SameLine();
@@ -301,7 +305,7 @@ public sealed partial class ConfigWindow
         ImGui.EndDisabled();
         DrawLessonSpeed();
         var volume = lessonPlayer.Volume;
-        if (ImGui.SliderFloat("Lesson playback volume", ref volume, 0, 1, "%.2f"))
+        if (ImGui.SliderFloat(midiGuide ? "MIDI guide volume" : "Lesson playback volume", ref volume, 0, 1, "%.2f"))
         {
             lessonPlayer.Volume = config.LessonVolume = volume;
             lessonPlayer.ApplyVolume();
@@ -350,7 +354,7 @@ public sealed partial class ConfigWindow
         if (catalogStatus.StartsWith("Cannot load exercise cue", StringComparison.Ordinal) ||
             catalogStatus.StartsWith("Cue not applied", StringComparison.Ordinal))
             ImGui.TextWrapped(catalogStatus);
-        if (lessonPlayer.Loading || lessonPlayer.Ready || lessonPlayer.Path.Length > 0) DrawLessonPlayback();
+        if (lessonPlayer.Path.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase)) DrawLessonPlayback();
         if (lessonLibrary is null)
         {
             ImGui.TextWrapped("Set your local folders to browse lesson audio.");

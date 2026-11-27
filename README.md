@@ -217,6 +217,66 @@ array. Each entry has `exercise`, `pdfPage`, and `crop` (`x`, `y`, `width`,
 and `height` in page fractions, measured from the top-left). A guided card's
 explicit page and crop take precedence.
 
+### Practise your own tabs
+
+Open **My Tabs** in `/ftruebard` to read your own TAB PDFs. The reader first
+looks in `Downloads/tabs`. To use a different folder, choose it with **Browse**
+or enter an absolute path, then select **Save folder & scan**. Select a song,
+then use **Previous**, **Next**, and the zoom controls to read it.
+
+When the PDF has a matching reviewed `.tab-guide.json` transcription,
+**Play TAB audio** generates a guitar guide from its frets, tuning, capo, and
+timing. Click or drag across a transcribed TAB staff to seek. Right-click the
+first and last frets to set A and B, then choose **Play A–B loop**. Use
+**Playback speed** to slow the guide down without changing pitch. The reader
+shows which passage is covered; other parts of the PDF remain viewable.
+
+Use **Metronome** when a score has no transcription. You can also put a
+Standard MIDI file beside its matching PDF, such as `Evening Study.mid` beside
+`Evening Study.pdf`, and rescan. An **Unsynced MIDI guide** plays without
+following the PDF. Neither mode grades your playing. The reader does not
+send your PDFs, transcriptions, or MIDI files to a service.
+
+In **Build practice guide**, choose **Scan whole PDF** to check what can be
+read automatically. When a score qualifies, **Preview detected score
+(unreviewed)** plays the result with the same seeking, speed, and loop
+controls. Previewing never saves or replaces a guide.
+
+To review a passage, select **Detect notation on this page** and choose a
+staff. Check the detected frets, note lengths, rests, tempo, capo, and tuning.
+Click a printed column to edit it. You can also insert a missed column or
+delete a false detection. Lengths and rests use quarter-note beats (`0.5`
+for an eighth note). Audition a chord or preview the passage, then confirm
+your review and select **Save reviewed guide**.
+
+The TAB scanner handles some digital exports, including some outlined
+notation. It doesn't read arbitrary scans or reliably interpret ties,
+repeats, and multiple voices. It leaves unread lengths unset and can
+withhold a whole-score preview.
+
+For a supported engraved piano PDF, open **Piano melody to guitar TAB** and
+select **Read piano opening**. The preview takes the highest note at each
+attack on the treble staff and omits the bass and inner chord notes. Select
+**Copy melody TAB** for the text arrangement, or **Play melody preview** to
+follow the original score, change speed, and loop a passage. The arrangement
+uses standard tuning without a capo. This reader is limited to the opening
+system of some one-sharp, 4/4 scores; it stops at the first measure it can't
+read. A preview doesn't modify the PDF or save a reviewed guide.
+
+Guides are saved beside the PDF. To extend a guide, append another reviewed
+staff in playback order using the same tuning and capo. Appending or
+replacing keeps a backup of the old guide.
+
+For a local transcription, use `<pdf-name>.tab-guide.json` beside the PDF.
+Version 1 stores `pdfSha256`, `reviewed`, a short `coverage` label, six MIDI
+`tuning` pitches from low to high, `capo`, and `rows`. Each row stores the
+1-based `page`, normalized `left`, `top`, `right`, and `bottom`, and its
+`attacks`. An attack has `start` and `end` in seconds, normalized `x` and
+`width`, and a zero-based `pass`. Its `frets` use `string` (1 is the highest
+string), `number` (fret relative to the capo), `hold` in seconds, and optional
+`delay` in seconds for a rolled chord. Set `schemaVersion` to `1` and mark the
+transcription `reviewed` only after checking the notes against the PDF.
+
 ### Local catalog format
 
 Catalogs are declarative data, not scripts. The following independent card

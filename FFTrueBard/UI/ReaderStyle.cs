@@ -12,7 +12,7 @@ public sealed partial class ConfigWindow
     private static readonly Vector4 ReaderGold = Rgb(0xe1bf83);
     private static readonly Vector4 ReaderBrass = Rgb(0x332c22);
     private static readonly Vector4 ReaderPaper = Rgb(0xf5eedc);
-    private static readonly string[] Workspaces = ["Lessons", "Practice", "Input", "Settings"];
+    private static readonly string[] Workspaces = ["Lessons", "My Tabs", "Practice", "Input", "Settings"];
     private string activeWorkspace = "Lessons";
 
     // This palette applies only to FFTrueBard. The host font, UI scale, and window state still work normally.

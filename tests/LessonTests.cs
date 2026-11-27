@@ -1,12 +1,15 @@
 using System.Security.Cryptography;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using FFTrueBard.Lessons;
+using NAudio.Midi;
 using NAudio.Wave;
 
 internal static class LessonTests
 {
     public static void Run(Action<bool, string> check)
     {
+        CheckMyTabs(check);
         var weekly = LessonLibrary.ParseTrack("01_Week-01_Exercises-1–7.mp3");
         check(weekly.Week == 1 && weekly.First == 1 && weekly.Last == 7, "Weekly Unicode-dash track ranges parsed");
         var last = LessonLibrary.ParseTrack("52_Week-52_Exercises-358-365.mp3");
@@ -291,6 +294,168 @@ internal static class LessonTests
                     .Map?.Notes.Length == 32, "The map beside the PDF or weekly audio is found even with a different configured root");
             }
             Console.WriteLine($"Local media check: {library.Exercises.Count} exercise/tuning and {library.Rhythm.Count} rhythm tracks opened read-only.");
+        }
+    }
+
+    private static void CheckMyTabs(Action<bool, string> check)
+    {
+        var dir = Directory.CreateTempSubdirectory("fftruebard-my-tabs-");
+        try
+        {
+            var pdf = Path.Combine(dir.FullName, "練習 phrase.PDF");
+            var sibling = Path.Combine(dir.FullName, "練習 phrase.MIDI");
+            File.WriteAllBytes(pdf, []);
+            File.WriteAllBytes(Path.Combine(dir.FullName, "PDF only.pdf"), []);
+            File.WriteAllBytes(Path.Combine(dir.FullName, "wrong title.mid"), []);
+            File.WriteAllBytes(Path.Combine(dir.CreateSubdirectory("nested").FullName, "unlisted.pdf"), []);
+            var events = new MidiEventCollection(1, 480);
+            events.AddTrack([new TempoEvent(500_000, 0), new TempoEvent(1_000_000, 480)]);
+            var a = new NoteOnEvent(0, 1, 69, 100, 240);
+            var b = new NoteOnEvent(0, 1, 64, 90, 240);
+            var c = new NoteOnEvent(480, 1, 72, 100, 480);
+            events.AddTrack([a, b, a.OffEvent, b.OffEvent, c, c.OffEvent]);
+            events.PrepareForExport();
+            MidiFile.Export(sibling, events);
+
+            var tabs = TabPracticeFile.Scan(dir.FullName);
+            check(tabs.Length == 2 && tabs.Any(tab => tab.Pdf == pdf && tab.Midi == sibling) &&
+                tabs.Any(tab => tab.Title == "PDF only" && tab.Midi is null),
+                "My Tabs scans PDFs directly and pairs matching MIDI including Unicode and uppercase extensions");
+            var guidePath = Path.ChangeExtension(pdf, ".tab-guide.json");
+            var guideDoc = new TabPdfGuide.Document(1, Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(pdf))), true,
+                "Opening study", [38, 45, 50, 55, 59, 64], 1,
+                [
+                    new(1, .1, .4, .9, .5, [new(0, .25, .2, .02, 0, [new(1, 2, .25)])]),
+                    new(2, .1, .5, .9, .6, [new(.5, .75, .3, .02, 0, [new(6, 0, .25)]),
+                        new(1, 1.25, .3, .02, 1, [new(6, 0, .25)])]),
+                ]);
+            File.WriteAllText(guidePath, JsonSerializer.Serialize(guideDoc));
+            check(TabPracticeFile.Scan(dir.FullName).Single(tab => tab.Pdf == pdf).Guide == guidePath,
+                "A reviewed transcription is discovered only beside its matching PDF");
+            var score = TabPdfGuide.Load(pdf, guidePath);
+            check(score.RowAt(.1)?.Page == 1 && score.RowAt(.4) is null && score.RowAt(1.1) is { Page: 2 } repeated &&
+                repeated.Cursor.NoteAtX(.31, 1.1) is { Start: 1, Pass: 1 } &&
+                repeated.Cursor.TimeAt(.31, .55) == .5,
+                "The generated guide follows pages and repeat passes, and seeks by printed fret without drawing through rests");
+            using (var generated = score.Render())
+            using (var expected = TabMidiGuide.Render([new(0, .25, 67, 82), new(.5, .75, 39, 82), new(1, 1.25, 39, 82)], 1.25))
+            {
+                var actualBytes = new byte[generated.Length];
+                var expectedBytes = new byte[expected.Length];
+                generated.ReadExactly(actualBytes);
+                expected.ReadExactly(expectedBytes);
+                check(actualBytes.AsSpan().SequenceEqual(expectedBytes),
+                    "Synthesized PDF notes use the printed fret, correct string, tuning, and capo");
+            }
+            var staff = new LessonTabStaff(.1, .4, .9, .5);
+            var first = new TabGuideBuilder.Column(.2, .02, [2, -1, -1, -1, -1, -1]);
+            var second = new TabGuideBuilder.Column(.3, .02, [-1, -1, -1, -1, -1, 0]) { Beats = .5f, RestBefore = .25f };
+            TabPdfGuide.Document Draft() => TabGuideBuilder.Build(guideDoc.PdfSha256, 1, staff, guideDoc.Tuning,
+                1, 120, "Reviewed passage", [first, second]);
+            var incomplete = false;
+            try { _ = Draft(); }
+            catch (InvalidDataException) { incomplete = true; }
+            check(incomplete && TabGuideBuilder.Audition(first, guideDoc.Tuning, 1).Single().Pitch == 67,
+                "Unspecified rhythm cannot be saved, but the extracted fret can be auditioned with tuning and capo");
+            first.Beats = .5f;
+            var draft = Draft();
+            var preview = TabPdfGuide.FromDocument(draft);
+            check(!draft.Reviewed && draft.Rows[0].Attacks[1] is { Start: .375, End: .625 } &&
+                preview.RowAt(.3) is null && preview.RowAt(.4)?.Page == 1,
+                "Draft preview uses entered durations and rests without marking the guide reviewed");
+            var prior = File.ReadAllBytes(guidePath);
+            var preserved = false;
+            try { TabPdfGuide.SaveReviewed(pdf, draft, TabPdfGuide.SaveMode.Create); }
+            catch (IOException) { preserved = true; }
+            check(preserved && File.ReadAllBytes(guidePath).AsSpan().SequenceEqual(prior),
+                "Saving a draft without explicit replacement leaves a prior guide untouched");
+            var backup = TabPdfGuide.SaveReviewed(pdf, draft, TabPdfGuide.SaveMode.Replace);
+            check(File.ReadAllBytes(backup).AsSpan().SequenceEqual(prior) &&
+                TabPdfGuide.Load(pdf, guidePath).Coverage == "Reviewed passage" &&
+                TabPracticeFile.Scan(dir.FullName).Single(tab => tab.Pdf == pdf).Guide == guidePath,
+                "Explicit replacement preserves the old guide and activates only the reviewed file");
+            var beforeAppend = File.ReadAllBytes(guidePath);
+            var duplicate = false;
+            try { TabPdfGuide.SaveReviewed(pdf, draft, TabPdfGuide.SaveMode.Append); }
+            catch (InvalidDataException) { duplicate = true; }
+            var nextPage = draft with { Rows = [draft.Rows[0] with { Page = 2 }] };
+            var appendBackup = TabPdfGuide.SaveReviewed(pdf, nextPage, TabPdfGuide.SaveMode.Append);
+            var appended = TabPdfGuide.Load(pdf, guidePath);
+            check(duplicate && File.ReadAllBytes(appendBackup).AsSpan().SequenceEqual(beforeAppend) &&
+                appended.Rows is [{ Page: 1 }, { Page: 2 }] && appended.RowAt(.65)?.Page == 2,
+                "Appending backs up the existing guide, rejects a duplicate staff, and places the new staff after the old playback");
+            File.AppendAllText(pdf, "different edition");
+            var stale = false;
+            try { TabPdfGuide.Load(pdf, guidePath); }
+            catch (InvalidDataException) { stale = true; }
+            check(stale, "Sync is disabled if a local PDF changes beneath a reviewed guide");
+            using (var guide = TabMidiGuide.Open(sibling))
+            {
+                var rate = guide.WaveFormat.SampleRate;
+                check(guide.WaveFormat.Encoding == WaveFormatEncoding.IeeeFloat &&
+                    guide.TotalTime.TotalSeconds is > 1.54 and < 1.56,
+                    "MIDI guide produces seekable float audio and applies tempo changes from a separate track");
+                var bytes = new byte[guide.Length];
+                guide.ReadExactly(bytes);
+                var samples = MemoryMarshal.Cast<byte, float>(bytes);
+                check(samples.Slice(rate / 10, rate / 10).ContainsAnyExcept(0f) &&
+                    !samples.Slice(rate * 35 / 100, rate / 10).ContainsAnyExcept(0f) &&
+                    samples.Slice(rate * 6 / 10, rate / 10).ContainsAnyExcept(0f) &&
+                    samples.ToArray().All(s => float.IsFinite(s) && Math.Abs(s) <= .95f),
+                    "Guide renders chords and notes, preserves rests, and bounds output level");
+                var period = (int)Math.Round(rate / (440 * Math.Pow(2, (72 - 69) / 12d)));
+                var noteSamples = samples.Slice(rate * 6 / 10, rate / 10);
+                var best = double.NegativeInfinity;
+                var bestLag = 0;
+                for (var lag = period - 5; lag <= period + 5; lag++)
+                {
+                    double product = 0, power = 0, laggedPower = 0;
+                    for (var i = 0; i < noteSamples.Length - period - 5; i++)
+                    {
+                        product += noteSamples[i] * noteSamples[i + lag];
+                        power += noteSamples[i] * noteSamples[i];
+                        laggedPower += noteSamples[i + lag] * noteSamples[i + lag];
+                    }
+                    var correlation = product / Math.Sqrt(power * laggedPower);
+                    if (correlation > best) { best = correlation; bestLag = lag; }
+                }
+                check(Math.Abs(bestLag - period) <= 1 && best > .7, "The synthesized guide produces the intended MIDI pitch");
+                using var loop = new LoopingLessonStream(guide);
+                check(loop.SetLoop(.5, .8, true), "Synthesized MIDI supports ordinary A–B loop bounds");
+                var tempo = new LessonTempoProvider(loop);
+                tempo.Reset(.5, 75);
+                check(tempo.Read(bytes, 0, 4096) == 4096, "Synthesized float audio supports pitch-preserving speed");
+            }
+
+            var invalid = Path.Combine(dir.FullName, "invalid.mid");
+            File.WriteAllBytes(invalid, new byte[14]);
+            var rejected = false;
+            try { using var ignored = TabMidiGuide.Open(invalid); }
+            catch (InvalidDataException) { rejected = true; }
+            check(rejected, "A malformed MIDI guide is rejected instead of guessed from the PDF");
+        }
+        finally { dir.Delete(recursive: true); }
+
+        var local = Environment.GetEnvironmentVariable("FFTRUEBARD_MY_TABS_TEST_ROOT");
+        if (!string.IsNullOrWhiteSpace(local))
+        {
+            var tabs = TabPracticeFile.Scan(local);
+            foreach (var tab in tabs.Where(tab => tab.Midi is not null))
+            {
+                using var guide = TabMidiGuide.Open(tab.Midi!);
+                check(guide.TotalTime > TimeSpan.Zero, "Local TAB MIDI guide opens read-only");
+            }
+            foreach (var tab in tabs.Where(tab => tab.Guide is not null))
+            {
+                var score = TabPdfGuide.Load(tab.Pdf, tab.Guide!);
+                using var generated = score.Render();
+                using var clip = new LoopingLessonStream(generated);
+                check(clip.SetPlaybackClip(0, generated.TotalTime.TotalSeconds) &&
+                    clip.SetClipLoop(score.Rows[0].Cursor.MusicStart, score.Rows[0].Cursor.MusicEnd),
+                    "Local reviewed TAB guide generates a playable and loopable score");
+            }
+            Console.WriteLine($"Local My Tabs check: {tabs.Length} PDFs, {tabs.Count(tab => tab.Midi is not null)} MIDI guides, " +
+                $"{tabs.Count(tab => tab.Guide is not null)} note-synced transcriptions.");
         }
     }
 
