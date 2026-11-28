@@ -196,7 +196,7 @@ matches, use the audio-only scrub strip below the strings.
 To loop part of a note-synced exercise, start playback from the printed speaker.
 Right-click the first fret and select **Set A at note start**. Right-click the
 last fret and select **Set B at note end**, then reopen the menu and select
-**Play A–B loop**. Use **Turn off TAB loop** to continue within the exercise.
+**Play A–B loop**. Use **Clear TAB loop** to continue within the exercise.
 For repeated notes, set the points while listening to the pass you want to loop.
 
 The plugin renders one view at a time in memory. It doesn't copy or upload
@@ -255,13 +255,14 @@ repeats, and multiple voices. It leaves unread lengths unset and can
 withhold a whole-score preview.
 
 For a supported engraved piano PDF, open **Piano melody to guitar TAB** and
-select **Read piano opening**. The preview takes the highest note at each
+select **Read piano melody**. The preview takes the highest note at each
 attack on the treble staff and omits the bass and inner chord notes. Select
 **Copy melody TAB** for the text arrangement, or **Play melody preview** to
 follow the original score, change speed, and loop a passage. The arrangement
-uses standard tuning without a capo. This reader is limited to the opening
-system of some one-sharp, 4/4 scores; it stops at the first measure it can't
-read. A preview doesn't modify the PDF or save a reviewed guide.
+uses standard tuning without a capo. The reader supports multiple systems and
+pages in some engraved one-sharp, 4/4 scores. It reports the first measure it
+can't read, for example when it encounters ties or separate voices. A preview
+doesn't modify the PDF or save a reviewed guide.
 
 Guides are saved beside the PDF. To extend a guide, append another reviewed
 staff in playback order using the same tuning and capo. Appending or
@@ -269,7 +270,8 @@ replacing keeps a backup of the old guide.
 
 For a local transcription, use `<pdf-name>.tab-guide.json` beside the PDF.
 Version 1 stores `pdfSha256`, `reviewed`, a short `coverage` label, six MIDI
-`tuning` pitches from low to high, `capo`, and `rows`. Each row stores the
+`tuning` pitches from low to high, `capo`, and `rows`. An optional `duration`
+in seconds preserves silence after the last attack. Each row stores the
 1-based `page`, normalized `left`, `top`, `right`, and `bottom`, and its
 `attacks`. An attack has `start` and `end` in seconds, normalized `x` and
 `width`, and a zero-based `pass`. Its `frets` use `string` (1 is the highest
@@ -812,6 +814,47 @@ For an optional read-only decode check against your own lesson files, set
 `FFTRUEBARD_LESSON_TEST_ROOT` to the local course root before running the tests.
 This opens each discovered MP3 without playing it or copying its contents into
 the repository. Normal CI does not require or include course materials.
+
+### Check TAB playback
+
+The release workflow runs the PDF and playback checks before publishing the
+ZIP. To run them yourself, pass an extracted plugin ZIP or a plugin build
+directory:
+
+```powershell
+dotnet run --project tests/PdfRenderer/PdfRenderer.Tests.csproj -c Release -- artifacts/plugin
+```
+
+The test score is generated locally. The tests synthesize it, feed samples
+through speed control, and drive the playback clock without opening an audio
+device. They check that seeking clears queued audio, that the cursor hides
+during rests and follows the correct page at 0.75×, and that clearing an A–B
+loop restores the clip bounds without resetting speed.
+
+To also check Exercises 193 and 294 with the original MP3s, pass the local
+course PDF after the build directory, followed by `--course-audio`. The
+test looks for the MP3s in `FFTRUEBARD_LESSON_TEST_ROOT` or beside the PDF.
+Run this separately from the default check, which reserves the COM marshaller
+to verify that PDF rendering doesn't interfere with its host.
+
+On a machine with FFXIV, matching local lesson files, and an audio output,
+run these checks to cover ImGui, the real audio device, and the original MP3s:
+
+1. In **My Tabs**, open a PDF with a matching reviewed guide or a supported
+   piano PDF. Start playback, drag to a later note, and release. Confirm the
+   audio and cursor both start there. Set 0.75×, loop two notes with the
+   right-click menu, then choose **Clear TAB loop**. Confirm playback
+   continues past B at 0.75×. For a multi-page guide, verify **Follow score**
+   changes pages during playback.
+2. In **Lessons → Tablature**, play Exercise 193 from its printed speaker
+   without a loop. Confirm that the announcement and count-in sound and that
+   the final guitar attack plays past the printed 49.00 s cutoff. Its
+   reviewed MP3 endpoint is 49.68 s.
+3. Play Exercise 294 at 0.75×. Confirm that the pickup plays once and the
+   two-bar phrase twice, with the cursor jumping back to the phrase start.
+   On the second pass, set A and B on two frets. Confirm that the highlighted
+   range repeats, then choose **Clear TAB loop** before B. Confirm playback
+   continues from the current point at 0.75×.
 
 ### Measure the detector against reference recordings
 

@@ -6,8 +6,9 @@ namespace FFTrueBard.Lessons;
 /// <summary>Opens the chosen lesson recording or MIDI guide outside the game thread.</summary>
 public sealed class LessonPlayer : IDisposable
 {
+    private readonly Func<IWavePlayer> createOutput;
     private Task<WaveStream>? loading;
-    private WaveOutEvent? output;
+    private IWavePlayer? output;
     private LoopingLessonStream? stream;
     private LessonTempoProvider? tempo;
     private bool discardLoad;
@@ -16,6 +17,10 @@ public sealed class LessonPlayer : IDisposable
     private long outputAnchor;
     private volatile bool outputStopped = true;
     private (double Seconds, bool Resume)? audibleSeek;
+
+    public LessonPlayer() : this(() => new WaveOutEvent { DesiredLatency = 100, NumberOfBuffers = 2 }) { }
+    internal LessonPlayer(Func<IWavePlayer> createOutput) => this.createOutput = createOutput;
+
     public string Path { get; private set; } = "";
     public string Status { get; private set; } = "Select an MP3 track to load.";
     public bool Loading => loading is not null;
@@ -30,10 +35,11 @@ public sealed class LessonPlayer : IDisposable
         get
         {
             if (audibleSeek is { } seek) return seek.Seconds;
-            if (stream is null || output is null || tempo is null || output.PlaybackState == PlaybackState.Stopped) return Position;
+            if (stream is null || output is not IWavePosition clock || tempo is null ||
+                output.PlaybackState == PlaybackState.Stopped) return Position;
             try
             {
-                var elapsed = (output.GetPosition() - outputAnchor) / (double)stream.WaveFormat.AverageBytesPerSecond;
+                var elapsed = (clock.GetPosition() - outputAnchor) / (double)stream.WaveFormat.AverageBytesPerSecond;
                 return LessonTempoProvider.SourceTime(positionAnchor, elapsed, tempo.SpeedPercent,
                     Position, LoopEnabled, LoopA, LoopB);
             }
@@ -86,7 +92,7 @@ public sealed class LessonPlayer : IDisposable
             stream = new LoopingLessonStream(reader);
             tempo = new LessonTempoProvider(stream);
             tempo.Reset(0, SpeedPercent);
-            output = new WaveOutEvent { DesiredLatency = 100, NumberOfBuffers = 2 };
+            output = createOutput();
             output.Init(tempo);
             output.PlaybackStopped += OnPlaybackStopped;
             output.Volume = Math.Clamp(Volume, 0, 1);
@@ -214,7 +220,7 @@ public sealed class LessonPlayer : IDisposable
         if (stream is null || tempo is null) return;
         tempo.Reset(seconds, SpeedPercent);
         positionAnchor = stream.Seconds;
-        try { outputAnchor = output?.GetPosition() ?? 0; }
+        try { outputAnchor = (output as IWavePosition)?.GetPosition() ?? 0; }
         catch (InvalidOperationException) { outputAnchor = 0; }
         catch (MmException) { outputAnchor = 0; }
     }

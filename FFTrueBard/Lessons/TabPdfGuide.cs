@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using NAudio.Wave;
 
 namespace FFTrueBard.Lessons;
@@ -11,7 +12,8 @@ internal sealed class TabPdfGuide
     internal sealed record Attack(double Start, double End, double X, double Width, int Pass, Fret[] Frets);
     internal sealed record Row(int Page, double Left, double Top, double Right, double Bottom, Attack[] Attacks);
     internal sealed record Document(int SchemaVersion, string PdfSha256, bool Reviewed, string Coverage,
-        int[] Tuning, int Capo, Row[] Rows);
+        int[] Tuning, int Capo, Row[] Rows,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Duration = null);
     internal sealed record ScoreRow(int Page, LessonTabStaff Staff, LessonScoreCursor Cursor);
     internal enum SaveMode { Create, Append, Replace }
 
@@ -75,6 +77,7 @@ internal sealed class TabPdfGuide
             {
                 Coverage = $"{original.Rows.Length + added.Length} reviewed staff passages",
                 Rows = [.. original.Rows, .. added],
+                Duration = draft.Duration is { } addedDuration ? duration + addedDuration : null,
             };
         }
         _ = FromDocument(document);
@@ -173,6 +176,12 @@ internal sealed class TabPdfGuide
         }
         if (end < .1)
             throw new InvalidDataException("The TAB guide is too short to play.");
+        if (document.Duration is { } duration)
+        {
+            if (!double.IsFinite(duration) || duration < end - 1e-9 || duration > 600)
+                throw new InvalidDataException("The TAB guide's duration falls outside its timing bounds.");
+            end = Math.Max(end, duration);
+        }
         return new(rows.ToArray(), notes.ToArray(), document.Coverage, end);
     }
 
