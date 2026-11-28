@@ -8,10 +8,14 @@ using FFTrueBard.Lessons;
 if (args.Length == 0)
     throw new ArgumentException("Pass the built plugin directory, optionally followed by a supported local PDF.");
 var pluginDirectory = Path.GetFullPath(args[0]);
+var courseAudio = args.Length == 3 && args[2] == "--course-audio";
+if (args.Length > 2 && !courseAudio)
+    throw new ArgumentException("The only option after the local PDF is --course-audio.");
 
 // Model a host that already owns the process-wide COM marshaller. PDF rendering
 // must work without registering another instance or calling the host's marshaller.
-ComWrappers.RegisterForMarshalling(new HostMarshaller());
+// Test original MP3s separately: Media Foundation needs Windows COM interop.
+if (!courseAudio) ComWrappers.RegisterForMarshalling(new HostMarshaller());
 using var folder = new ScratchDirectory();
 var fixture = Path.Combine(folder.Path, "Étude 楽譜.pdf");
 WriteTestPdf(fixture);
@@ -35,7 +39,7 @@ Reject(() => LessonPdfRenderer.Render(pluginDirectory, fixture, 1, new(.9, .9, .
 var damaged = Path.Combine(folder.Path, "damaged.pdf");
 File.WriteAllText(damaged, "not a PDF");
 Reject(() => LessonPdfRenderer.Render(pluginDirectory, damaged, 1, null), "could not be opened");
-Console.WriteLine("PDF render checks passed: host COM isolation, Unicode paths, full page, crop, and invalid input.");
+Console.WriteLine($"PDF render checks passed: {(courseAudio ? "" : "host COM isolation, ")}Unicode paths, full page, crop, and invalid input.");
 
 var draftFixture = Path.Combine(folder.Path, "TAB practice.pdf");
 var staffInk = string.Concat(Enumerable.Range(0, 6).Select(i => $"40 {150 - i * 9} m 425 {150 - i * 9} l S\n"));
@@ -71,6 +75,7 @@ Check(PianoMelodyTab.Finger(testMelody).Select(f => standard[f.String - 1] + f.F
     "Melody fingerings preserve pitch and octave in standard tuning");
 Reject(() => PianoMelodyTab.Finger([39]), "outside");
 Reject(() => PianoMelodyTab.ReadOpening(draftImage), "piano");
+PianoScoreChecks.Run(draftImage.PdfSha256!);
 var detected = new TabPdfScan.Score([
     cleanPage with { PageCount = 2 },
     cleanPage with { Number = 2, PageCount = 2, Rhythms = [new([.5f, .5f], [1, 0], false)] },
@@ -80,6 +85,8 @@ Check(detected.Rows is [var firstRow, var secondRow] && firstRow.Page == 1 && se
     detected.RowAt(.25) == firstRow && detected.RowAt(.75) is null && detected.RowAt(1.0) == secondRow &&
     previewAudio.Length > 44,
     "A detected multi-page preview plays locally, preserves rests and follows the correct page");
+PlaybackChecks.Run(detected);
+Console.WriteLine("Offline playback passed: score seeking, buffered audio clock, 0.75×, page follow, and A–B set/clear.");
 
 var bookIndex = LessonTablatureIndex.BundledIndexForValidation();
 using var bookStream = typeof(LessonTablatureIndex).Assembly.GetManifestResourceStream(LessonTablatureIndex.BundledResource)!;
@@ -149,6 +156,9 @@ if (args.Length > 1)
     File.Copy(args[1], local);
     var index = LessonTablatureIndex.LoadForPdf(local);
     Check(index?.Count == 365, "Built-in index recognized the supported PDF by hash");
+    var course = courseAudio ? LessonLibrary.Scan(new(
+        Environment.GetEnvironmentVariable("FFTRUEBARD_LESSON_TEST_ROOT") is { Length: > 0 } courseRoot
+            ? courseRoot : Path.GetDirectoryName(Path.GetFullPath(args[1]))!, local, "", "")) : null;
     for (var exercise = 1; exercise <= 365; exercise++)
     {
         var entry = index!.Find(exercise)!;
@@ -175,8 +185,12 @@ if (args.Length > 1)
         Check(cursor.NoteSynced && !cursor.ShowsNoteAt(map.CueStartSeconds) &&
             Math.Abs(cursor.TimeAt(first.X + first.Width * .5) - first.Start) < .000001,
             $"Exercise {exercise} matches the rendered TAB and first fret seeks past the count-in");
+        if (course is not null && exercise is 193 or 294)
+            PlaybackChecks.RunCourse(course, map, cursor);
     }
     Console.WriteLine("Rendered and located audio markers and TAB rows for all 365 indexed excerpts with no sidecar.");
+    if (course is not null)
+        Console.WriteLine("Offline course playback passed with the original MP3s: Exercise 193's measured ending and Exercise 294's repeat and loop.");
 }
 
 if (Environment.GetEnvironmentVariable("FFTRUEBARD_MY_TABS_TEST_ROOT") is { Length: > 0 } tabRoot)
@@ -270,6 +284,66 @@ if (Environment.GetEnvironmentVariable("FFTRUEBARD_MY_TABS_TEST_ROOT") is { Leng
                 text.Write(melody.Text);
             }
             Console.WriteLine($"{(verified ? "Verified" : "Read")} a {melody.Measures}-measure melody-only arrangement from the piano opening.");
+            var extended = PianoMelodyTab.ReadScore(page => page == 1 ? image :
+                LessonPdfRenderer.Render(pluginDirectory, path, page, null, readTabDigits: true));
+            Console.WriteLine($"Piano score: {extended.Measures} measures in {extended.Document.Rows.Length} systems. {extended.StopReason}");
+            var extendedGuide = TabPdfGuide.FromDocument(extended.Document);
+            if (Environment.GetEnvironmentVariable("FFTRUEBARD_MELODY_EXTENDED_REVIEW") is { Length: > 0 } extendedReview)
+            {
+                Check(verified, "Verify the opening before comparing the continuation");
+                using var review = JsonDocument.Parse(File.ReadAllBytes(extendedReview));
+                var bars = review.RootElement.EnumerateArray().ToArray();
+                var nextMeasure = melody.Measures + bars.Length + 1;
+                Check(extended.Measures == nextMeasure - 1 &&
+                    extended.StopReason?.Contains($"measure {nextMeasure}:", StringComparison.Ordinal) == true,
+                    "The extended piano preview must stop at the first unresolved measure");
+                var tick = melody.Measures * 16;
+                var extendedAttacks = extended.Document.Rows.SelectMany(r => r.Attacks).ToArray();
+                int Pitch(TabPdfGuide.Attack a)
+                {
+                    var f = a.Frets.Single();
+                    return standard[f.String - 1] + f.Number;
+                }
+                Check(extendedAttacks.Take(attacks.Length).Select(a => (a.Start, a.End, Pitch(a)))
+                    .SequenceEqual(attacks.Select(a => (a.Start, a.End, Pitch(a)))),
+                    "The extended score retains the complete reviewed opening");
+                var actual = extendedAttacks.Skip(attacks.Length).ToArray();
+                var index = 0;
+                foreach (var bar in bars)
+                {
+                    var start = tick;
+                    foreach (var entry in bar.EnumerateArray())
+                    {
+                        var pitch = entry[0].GetInt32();
+                        var length = entry[1].GetInt32();
+                        if (pitch == 0)
+                            Check(extendedGuide.RowAt((tick + length / 2d) * 15 / melody.Bpm) is null,
+                                $"Piano measure {start / 16 + 1} at tick {tick - start}: expected a rest");
+                        else
+                        {
+                            Check(index < actual.Length, "Expected another piano attack");
+                            var attack = actual[index++];
+                            var heardPitch = Pitch(attack);
+                            var heardTick = (int)Math.Round(attack.Start * melody.Bpm / 15);
+                            var heardLength = (int)Math.Round((attack.End - attack.Start) * melody.Bpm / 15);
+                            Check((heardPitch, heardTick, heardLength) == (pitch, tick, length),
+                                $"Piano measure {start / 16 + 1} at tick {tick - start}: expected {pitch}/{length}, " +
+                                $"got {heardPitch}/{heardLength} at tick {heardTick - start}");
+                        }
+                        tick += length;
+                    }
+                    Check(tick - start == 16, "The reviewed measure must total 16 sixteenths");
+                }
+                Check(index == actual.Length && Math.Abs(extendedGuide.End - tick * 15d / melody.Bpm) < 1e-9,
+                    "The extended melody must have no extra attacks or miscounted time");
+                if (Environment.GetEnvironmentVariable("FFTRUEBARD_MELODY_EXTENDED_EXPORT") is { Length: > 0 } extendedExport)
+                {
+                    using var file = new FileStream(extendedExport, FileMode.CreateNew);
+                    using var text = new StreamWriter(file, Encoding.UTF8);
+                    text.Write(extended.Text);
+                }
+                Console.WriteLine($"Verified all {index} continuation notes, rests, and stop point against the local review.");
+            }
         }
         if (Path.GetFileName(path) == "Bygone Serenity (Tab).pdf")
         {

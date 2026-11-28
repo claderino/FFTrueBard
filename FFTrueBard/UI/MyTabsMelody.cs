@@ -6,11 +6,15 @@ namespace FFTrueBard.UI;
 public sealed partial class ConfigWindow
 {
     private Task<PianoMelodyTab.Melody>? myTabMelodyJob;
+    private CancellationTokenSource? myTabMelodyCancellation;
     private PianoMelodyTab.Melody? myTabMelody;
     private string myTabMelodyStatus = "";
 
     private void ResetMyTabMelody()
     {
+        myTabMelodyCancellation?.Cancel();
+        myTabMelodyCancellation?.Dispose();
+        myTabMelodyCancellation = null;
         if (myTabMelodyJob is { } job)
             _ = job.ContinueWith(task => { _ = task.Exception; }, TaskContinuationOptions.OnlyOnFaulted);
         myTabMelodyJob = null;
@@ -23,6 +27,8 @@ public sealed partial class ConfigWindow
         if (myTabMelodyJob is { IsCompleted: true } job)
         {
             myTabMelodyJob = null;
+            myTabMelodyCancellation?.Dispose();
+            myTabMelodyCancellation = null;
             try
             {
                 myTabMelody = job.GetAwaiter().GetResult();
@@ -31,20 +37,23 @@ public sealed partial class ConfigWindow
             catch (Exception e) { myTabMelodyStatus = e.Message; }
         }
         if (!ImGui.CollapsingHeader("Piano melody to guitar TAB")) return;
-        ImGui.TextWrapped("Read the first system of a supported piano PDF. Keep the top melody, not the bass or chords. " +
-            "The preview uses standard tuning and no capo.");
+        ImGui.TextWrapped("Read the treble melody from a supported piano PDF, without the bass or inner chord notes. " +
+            "The preview uses standard tuning and no capo and stops at the first measure it can't read.");
         ImGui.BeginDisabled(myTabMelodyJob is not null);
-        if (ImGui.SmallButton("Read piano opening"))
+        if (ImGui.SmallButton("Read piano melody"))
         {
-            myTabMelodyStatus = "Reading the piano opening locally...";
+            myTabMelodyStatus = "Reading the piano score locally...";
             myTabMelody = null;
-            myTabMelodyJob = Task.Run(() => PianoMelodyTab.ReadOpening(
-                LessonPdfRenderer.Render(pluginDirectory, tab.Pdf, 1, null, readTabDigits: true)));
+            myTabMelodyCancellation = new();
+            var cancellation = myTabMelodyCancellation.Token;
+            myTabMelodyJob = Task.Run(() => PianoMelodyTab.ReadScore(page =>
+                LessonPdfRenderer.Render(pluginDirectory, tab.Pdf, page, null, readTabDigits: true), cancellation));
         }
         ImGui.EndDisabled();
         if (myTabMelody is { } melody)
         {
-            ImGui.TextWrapped($"Unreviewed melody draft: first {melody.Measures} measures · {melody.Bpm} BPM");
+            ImGui.TextWrapped($"Unreviewed melody draft: {(melody.StopReason is null ? "" : "first ")}{melody.Measures} measures · {melody.Bpm} BPM");
+            if (melody.StopReason is { } reason) ImGui.TextWrapped($"Stopped at {reason}");
             ImGui.BeginDisabled(ReaderAudioLoading);
             if (ImGui.SmallButton("Play melody preview"))
             {

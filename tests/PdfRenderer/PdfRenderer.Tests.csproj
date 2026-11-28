@@ -9,6 +9,9 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="SoundTouch.Net" Version="2.3.2" />
+    <Compile Include="../../FFTrueBard/Lessons/LessonPlayer.cs" Link="LessonPlayer.cs" />
+    <Compile Include="../../FFTrueBard/Lessons/LessonTempoProvider.cs" Link="LessonTempoProvider.cs" />
     <Compile Include="../../FFTrueBard/Lessons/LessonPdfRenderer.cs" Link="LessonPdfRenderer.cs" />
     <Compile Include="../../FFTrueBard/Lessons/TabPdfDraft.cs" Link="TabPdfDraft.cs" />
     <Compile Include="../../FFTrueBard/Lessons/TabPdfRhythm.cs" Link="TabPdfRhythm.cs" />

@@ -49,9 +49,6 @@ jobs:
           "VER=$ver" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
           dotnet build FFTrueBard/FFTrueBard.csproj -c Release -o artifacts/plugin "-p:Version=$ver"
 
-      - name: Test the bundled PDF renderer
-        run: dotnet run --project tests/PdfRenderer/PdfRenderer.Tests.csproj -c Release -- artifacts/plugin
-
       - name: Package release zip
         shell: pwsh
         env:
@@ -108,6 +105,11 @@ jobs:
             $files = Get-ChildItem $outDir -File | Where-Object { $_.Extension -in '.dll', '.json' }
             Compress-Archive -Path ($files.FullName + @($notices.FullName, $tempoNotices.FullName)) -DestinationPath .\FFTrueBard.zip -Force
             Write-Host "Packaged manually from $outDir"
+
+      - name: Verify the packaged PDF renderer and offline playback
+        run: |
+          Expand-Archive -LiteralPath FFTrueBard.zip -DestinationPath artifacts/release-check
+          dotnet run --project tests/PdfRenderer/PdfRenderer.Tests.csproj -c Release -- artifacts/release-check
 
       - name: Generate pluginmaster.json
         shell: pwsh
